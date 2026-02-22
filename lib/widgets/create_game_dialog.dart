@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-Future<String?> showAddTeamDialog(BuildContext context) {
+Future<String?> showCreateGameDialog(BuildContext context) {
   return showGeneralDialog<String>(
     context: context,
     barrierDismissible: true,
@@ -25,19 +25,19 @@ Future<String?> showAddTeamDialog(BuildContext context) {
       );
     },
     pageBuilder: (context, animation, secondaryAnimation) {
-      return const _AddTeamDialogContent();
+      return const _CreateGameDialogContent();
     },
   );
 }
 
-class _AddTeamDialogContent extends StatefulWidget {
-  const _AddTeamDialogContent();
+class _CreateGameDialogContent extends StatefulWidget {
+  const _CreateGameDialogContent();
 
   @override
-  State<_AddTeamDialogContent> createState() => _AddTeamDialogContentState();
+  State<_CreateGameDialogContent> createState() => _CreateGameDialogContentState();
 }
 
-class _AddTeamDialogContentState extends State<_AddTeamDialogContent> {
+class _CreateGameDialogContentState extends State<_CreateGameDialogContent> {
   late final TextEditingController _controller;
 
   @override
@@ -60,9 +60,9 @@ class _AddTeamDialogContentState extends State<_AddTeamDialogContent> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(
-              'Добавление команды игроков',
-              style: const TextStyle(
+            const Text(
+              'Создание новой игры',
+              style: TextStyle(
                 color: Color(0xFFFFFFFF),
                 fontSize: 28,
                 fontWeight: FontWeight.w600,
@@ -108,9 +108,9 @@ class _AddTeamDialogContentState extends State<_AddTeamDialogContent> {
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        'Название команды',
-                        style: const TextStyle(
+                      const Text(
+                        'Название игры',
+                        style: TextStyle(
                           color: Color(0xFF3A1800),
                           fontSize: 22,
                           fontWeight: FontWeight.w500,
@@ -122,7 +122,7 @@ class _AddTeamDialogContentState extends State<_AddTeamDialogContent> {
                       TextField(
                         controller: _controller,
                         decoration: InputDecoration(
-                          hintText: 'Введите название команды',
+                          hintText: 'Введите название игры',
                           hintStyle: TextStyle(
                             color: const Color(0xFF3A1800).withValues(alpha: 0.4),
                             fontSize: 20,
