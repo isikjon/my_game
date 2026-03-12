@@ -1,5 +1,6 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import '../widgets/add_team_dialog.dart';
 import '../widgets/create_game_dialog.dart';
 import 'game_board_screen.dart';
@@ -113,18 +114,23 @@ class _HostSetupScreenState extends State<HostSetupScreen> {
         child: SafeArea(
           child: LayoutBuilder(
             builder: (context, constraints) {
-              final dividerHeight = constraints.maxHeight.clamp(0.0, 400.0);
+              final sectionHeight = constraints.maxHeight;
+              final dividerHeight = sectionHeight.clamp(0.0, 400.0);
               return Row(
                 children: [
                   Expanded(
-                    child: _TeamsSection(
-                      teams: _teams,
-                      selectionMode: _teamsSelectionMode,
-                      selectedIndices: _selectedTeamIndices,
-                      onAddTeam: _addTeam,
-                      onToggleSelectionMode: _toggleTeamsSelectionMode,
-                      onToggleSelection: _toggleTeamSelection,
-                      onDeleteSelected: _deleteSelectedTeams,
+                    child: SizedBox(
+                      height: sectionHeight,
+                      child: _TeamsSection(
+                        sectionHeight: sectionHeight,
+                        teams: _teams,
+                        selectionMode: _teamsSelectionMode,
+                        selectedIndices: _selectedTeamIndices,
+                        onAddTeam: _addTeam,
+                        onToggleSelectionMode: _toggleTeamsSelectionMode,
+                        onToggleSelection: _toggleTeamSelection,
+                        onDeleteSelected: _deleteSelectedTeams,
+                      ),
                     ),
                   ),
                   Center(
@@ -137,22 +143,26 @@ class _HostSetupScreenState extends State<HostSetupScreen> {
                     ),
                   ),
                   Expanded(
-                    child: _GamesSection(
-                      games: _games,
-                      selectionMode: _gamesSelectionMode,
-                      selectedIndices: _selectedGameIndices,
-                      onAddGame: _addGame,
-                      onToggleSelectionMode: _toggleGamesSelectionMode,
-                      onToggleSelection: _toggleGameSelection,
-                      onDeleteSelected: _deleteSelectedGames,
-                      onStartGame: (i) {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const GameBoardScreen(),
-                          ),
-                        );
-                      },
+                    child: SizedBox(
+                      height: sectionHeight,
+                      child: _GamesSection(
+                        sectionHeight: sectionHeight,
+                        games: _games,
+                        selectionMode: _gamesSelectionMode,
+                        selectedIndices: _selectedGameIndices,
+                        onAddGame: _addGame,
+                        onToggleSelectionMode: _toggleGamesSelectionMode,
+                        onToggleSelection: _toggleGameSelection,
+                        onDeleteSelected: _deleteSelectedGames,
+                        onStartGame: (i) {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const GameBoardScreen(),
+                            ),
+                          );
+                        },
+                      ),
                     ),
                   ),
                 ],
@@ -178,6 +188,7 @@ class _TeamItem {
 }
 
 class _TeamsSection extends StatelessWidget {
+  final double sectionHeight;
   final List<_TeamItem> teams;
   final bool selectionMode;
   final Set<int> selectedIndices;
@@ -187,6 +198,7 @@ class _TeamsSection extends StatelessWidget {
   final VoidCallback onDeleteSelected;
 
   const _TeamsSection({
+    required this.sectionHeight,
     required this.teams,
     required this.selectionMode,
     required this.selectedIndices,
@@ -202,9 +214,13 @@ class _TeamsSection extends StatelessWidget {
 
     return SingleChildScrollView(
       padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
+      child: ConstrainedBox(
+        constraints: BoxConstraints(minHeight: sectionHeight - 48),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
           Wrap(
             alignment: WrapAlignment.center,
             spacing: 12,
@@ -254,12 +270,16 @@ class _TeamsSection extends StatelessWidget {
                   behavior: HitTestBehavior.opaque,
                   child: Padding(
                     padding: const EdgeInsets.all(12),
-                    child: Icon(
-                      Icons.delete_outline,
-                      color: selectionMode
-                          ? const Color(0xFF863C15)
-                          : const Color(0xFF3A1800),
-                      size: 32,
+                    child: SvgPicture.asset(
+                      'assets/icons/delete.svg',
+                      width: 32,
+                      height: 32,
+                      colorFilter: ColorFilter.mode(
+                        selectionMode
+                            ? const Color(0xFF863C15)
+                            : const Color(0xFF3A1800),
+                        BlendMode.srcIn,
+                      ),
                     ),
                   ),
                 ),
@@ -281,12 +301,16 @@ class _TeamsSection extends StatelessWidget {
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(
-                            Icons.delete,
-                            color: hasSelection
-                                ? const Color(0xFFFFFFFF)
-                                : const Color(0xFF3A1800).withValues(alpha: 0.5),
-                            size: 22,
+                          SvgPicture.asset(
+                            'assets/icons/delete.svg',
+                            width: 22,
+                            height: 22,
+                            colorFilter: ColorFilter.mode(
+                              hasSelection
+                                  ? const Color(0xFFFFFFFF)
+                                  : const Color(0xFF3A1800).withValues(alpha: 0.5),
+                              BlendMode.srcIn,
+                            ),
                           ),
                           const SizedBox(width: 8),
                           Text(
@@ -308,16 +332,21 @@ class _TeamsSection extends StatelessWidget {
           ),
           if (teams.isEmpty) ...[
             const SizedBox(height: 48),
-            Text(
-              'Здесь еще нет команд, но уже можно создать',
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: Color(0xFF3A1800),
-                fontSize: 28,
-                fontWeight: FontWeight.w500,
-                letterSpacing: -0.5,
-                height: 1.3,
-                inherit: false,
+            SizedBox(
+              height: 100,
+              child: Center(
+                child: Text(
+                  'Здесь еще нет команд, но уже можно создать',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Color(0xFF3A1800),
+                    fontSize: 28,
+                    fontWeight: FontWeight.w500,
+                    letterSpacing: -0.5,
+                    height: 1.3,
+                    inherit: false,
+                  ),
+                ),
               ),
             ),
           ] else ...[
@@ -335,6 +364,7 @@ class _TeamsSection extends StatelessWidget {
             }),
           ],
         ],
+        ),
       ),
     );
   }
@@ -388,33 +418,39 @@ class _TeamCard extends StatelessWidget {
             Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(
-                  Icons.play_arrow,
-                  color: Color(0xFFF0B85E),
-                  size: 24,
+                SvgPicture.asset(
+                  'assets/icons/play_button.svg',
+                  width: 24,
+                  height: 24,
                 ),
                 const SizedBox(width: 8),
                 Text(
                   team.rounds.toString(),
                   style: const TextStyle(
-                    color: Color(0xFFF0B85E),
+                    fontFamily: 'SF Pro',
+                    fontWeight: FontWeight.w500,
                     fontSize: 20,
-                    fontWeight: FontWeight.w600,
+                    height: 1.0,
+                    letterSpacing: -0.36,
+                    color: Color(0xFF000000),
                   ),
                 ),
                 const SizedBox(width: 24),
-                const Icon(
-                  Icons.star,
-                  color: Color(0xFFF0B85E),
-                  size: 24,
+                SvgPicture.asset(
+                  'assets/icons/star-circle.svg',
+                  width: 24,
+                  height: 24,
                 ),
                 const SizedBox(width: 8),
                 Text(
                   team.score.toString(),
                   style: const TextStyle(
-                    color: Color(0xFFF0B85E),
+                    fontFamily: 'SF Pro',
+                    fontWeight: FontWeight.w500,
                     fontSize: 20,
-                    fontWeight: FontWeight.w600,
+                    height: 1.0,
+                    letterSpacing: -0.36,
+                    color: Color(0xFF000000),
                   ),
                 ),
                 if (showSelection) ...[
@@ -453,6 +489,7 @@ class _TeamCard extends StatelessWidget {
 }
 
 class _GamesSection extends StatelessWidget {
+  final double sectionHeight;
   final List<String> games;
   final bool selectionMode;
   final Set<int> selectedIndices;
@@ -463,6 +500,7 @@ class _GamesSection extends StatelessWidget {
   final void Function(int) onStartGame;
 
   const _GamesSection({
+    required this.sectionHeight,
     required this.games,
     required this.selectionMode,
     required this.selectedIndices,
@@ -479,9 +517,13 @@ class _GamesSection extends StatelessWidget {
 
     return SingleChildScrollView(
       padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
+      child: ConstrainedBox(
+        constraints: BoxConstraints(minHeight: sectionHeight - 48),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
           Wrap(
             alignment: WrapAlignment.center,
             spacing: 12,
@@ -531,12 +573,16 @@ class _GamesSection extends StatelessWidget {
                   behavior: HitTestBehavior.opaque,
                   child: Padding(
                     padding: const EdgeInsets.all(12),
-                    child: Icon(
-                      Icons.delete_outline,
-                      color: selectionMode
-                          ? const Color(0xFF863C15)
-                          : const Color(0xFF3A1800),
-                      size: 32,
+                    child: SvgPicture.asset(
+                      'assets/icons/delete.svg',
+                      width: 32,
+                      height: 32,
+                      colorFilter: ColorFilter.mode(
+                        selectionMode
+                            ? const Color(0xFF863C15)
+                            : const Color(0xFF3A1800),
+                        BlendMode.srcIn,
+                      ),
                     ),
                   ),
                 ),
@@ -558,12 +604,16 @@ class _GamesSection extends StatelessWidget {
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(
-                            Icons.delete,
-                            color: hasSelection
-                                ? const Color(0xFFFFFFFF)
-                                : const Color(0xFF3A1800).withValues(alpha: 0.5),
-                            size: 22,
+                          SvgPicture.asset(
+                            'assets/icons/delete.svg',
+                            width: 22,
+                            height: 22,
+                            colorFilter: ColorFilter.mode(
+                              hasSelection
+                                  ? const Color(0xFFFFFFFF)
+                                  : const Color(0xFF3A1800).withValues(alpha: 0.5),
+                              BlendMode.srcIn,
+                            ),
                           ),
                           const SizedBox(width: 8),
                           Text(
@@ -585,16 +635,21 @@ class _GamesSection extends StatelessWidget {
           ),
           if (games.isEmpty) ...[
             const SizedBox(height: 48),
-            Text(
-              'Здесь еще нет игр, но уже можно создать',
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: Color(0xFF3A1800),
-                fontSize: 28,
-                fontWeight: FontWeight.w500,
-                letterSpacing: -0.5,
-                height: 1.3,
-                inherit: false,
+            SizedBox(
+              height: 100,
+              child: Center(
+                child: Text(
+                  'Здесь еще нет игр, но уже можно \nсоздать',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Color(0xFF3A1800),
+                    fontSize: 28,
+                    fontWeight: FontWeight.w500,
+                    letterSpacing: -0.5,
+                    height: 1.3,
+                    inherit: false,
+                  ),
+                ),
               ),
             ),
           ] else ...[
@@ -613,6 +668,7 @@ class _GamesSection extends StatelessWidget {
             }),
           ],
         ],
+        ),
       ),
     );
   }
