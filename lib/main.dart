@@ -20,7 +20,17 @@ class SvoyaIgraApp extends StatelessWidget {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'Своя Игра',
-      theme: ThemeData(fontFamily: 'SF Pro Display'),
+      theme: ThemeData(
+        fontFamily: '.SF Pro Display',
+        fontFamilyFallback: const [
+          'SF Pro Display',
+          'SF Pro',
+          '-apple-system',
+          'Helvetica Neue',
+          'Roboto',
+          'sans-serif',
+        ],
+      ),
       home: const ModeSelectionScreen(),
     );
   }

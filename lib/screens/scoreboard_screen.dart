@@ -2,7 +2,10 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 
 class ScoreboardScreen extends StatefulWidget {
-  const ScoreboardScreen({super.key});
+  final List<String>? teams;
+  final Map<String, int>? scores;
+
+  const ScoreboardScreen({super.key, this.teams, this.scores});
 
   @override
   State<ScoreboardScreen> createState() => _ScoreboardScreenState();
@@ -10,13 +13,7 @@ class ScoreboardScreen extends StatefulWidget {
 
 class _ScoreboardScreenState extends State<ScoreboardScreen>
     with TickerProviderStateMixin {
-  static const _teamNames = [
-    'Команда 1',
-    'Команда 2',
-    'Команда 3',
-    'Команда 4',
-  ];
-
+  late final List<String> _teamNames;
   late final List<int> _scores;
   late final int _winnerIndex;
   late final AnimationController _mainController;
@@ -30,10 +27,16 @@ class _ScoreboardScreenState extends State<ScoreboardScreen>
     super.initState();
 
     final rng = Random();
-    _scores = List.generate(4, (_) => (rng.nextInt(46) + 5) * 100);
-    _winnerIndex = _scores.indexOf(
-      _scores.reduce((a, b) => a > b ? a : b),
-    );
+    if (widget.teams != null && widget.scores != null) {
+      _teamNames = widget.teams!;
+      _scores = _teamNames.map((t) => widget.scores![t] ?? 0).toList();
+    } else {
+      _teamNames = ['Команда 1', 'Команда 2', 'Команда 3', 'Команда 4'];
+      _scores = List.generate(4, (_) => (rng.nextInt(46) + 5) * 100);
+    }
+    _winnerIndex = _scores.isEmpty
+        ? 0
+        : _scores.indexOf(_scores.reduce((a, b) => a > b ? a : b));
 
     _mainController = AnimationController(
       duration: const Duration(milliseconds: 3000),
@@ -46,7 +49,7 @@ class _ScoreboardScreenState extends State<ScoreboardScreen>
     );
 
     _entryAnims = List.generate(
-      4,
+      _teamNames.length,
       (i) => CurvedAnimation(
         parent: _mainController,
         curve: Interval(
@@ -121,9 +124,9 @@ class _ScoreboardScreenState extends State<ScoreboardScreen>
     return Row(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
-      children: List.generate(4, (i) {
+      children: List.generate(_teamNames.length, (i) {
         return Padding(
-          padding: EdgeInsets.only(right: i < 3 ? 70.0 : 0),
+          padding: EdgeInsets.only(right: i < _teamNames.length - 1 ? 70.0 : 0),
           child: AnimatedBuilder(
             animation: _entryAnims[i],
             builder: (context, child) {

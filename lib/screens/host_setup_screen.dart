@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import '../widgets/add_team_dialog.dart';
 import '../widgets/create_game_dialog.dart';
-import 'game_board_screen.dart';
+import 'game_setup_screen.dart';
 
 class HostSetupScreen extends StatefulWidget {
   const HostSetupScreen({super.key});
@@ -158,7 +158,9 @@ class _HostSetupScreenState extends State<HostSetupScreen> {
                           Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (_) => const GameBoardScreen(),
+                              builder: (_) => GameSetupScreen(
+                                gameName: _games[i],
+                              ),
                             ),
                           );
                         },
