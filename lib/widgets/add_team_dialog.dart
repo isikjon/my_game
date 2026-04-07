@@ -6,7 +6,7 @@ Future<String?> showAddTeamDialog(BuildContext context) {
     barrierDismissible: true,
     barrierLabel: 'Close',
     barrierColor: Colors.black.withValues(alpha: 0.6),
-    transitionDuration: const Duration(milliseconds: 350),
+    transitionDuration: const Duration(milliseconds: 250),
     transitionBuilder: (context, animation, secondaryAnimation, child) {
       return FadeTransition(
         opacity: CurvedAnimation(
@@ -14,7 +14,7 @@ Future<String?> showAddTeamDialog(BuildContext context) {
           curve: Curves.easeOut,
         ),
         child: ScaleTransition(
-          scale: Tween<double>(begin: 0.85, end: 1.0).animate(
+          scale: Tween<double>(begin: 0.92, end: 1.0).animate(
             CurvedAnimation(
               parent: animation,
               curve: Curves.easeOutCubic,
@@ -54,138 +54,155 @@ class _AddTeamDialogContentState extends State<_AddTeamDialogContent> {
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Material(
-        color: Colors.transparent,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              'Добавление команды игроков',
-              style: const TextStyle(
-                color: Color(0xFFFFFFFF),
-                fontSize: 28,
-                fontWeight: FontWeight.w600,
-                letterSpacing: -0.5,
-                height: 1.2,
-              ),
-            ),
-            const SizedBox(height: 24),
-            Container(
-              width: 520,
-              padding: const EdgeInsets.fromLTRB(40, 32, 40, 40),
-              decoration: BoxDecoration(
-                color: const Color(0xFFFFF1E4),
-                borderRadius: BorderRadius.circular(24),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.15),
-                    blurRadius: 24,
-                    offset: const Offset(0, 8),
-                  ),
-                ],
-              ),
-              child: Stack(
-                clipBehavior: Clip.none,
+    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+
+    return GestureDetector(
+      onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
+      behavior: HitTestBehavior.translucent,
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(24, 20, 24, bottomInset + 20),
+        child: Center(
+          child: SingleChildScrollView(
+            child: Material(
+              color: Colors.transparent,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  Positioned(
-                    top: 0,
-                    right: 0,
-                    child: GestureDetector(
-                      onTap: () => Navigator.pop(context),
-                      behavior: HitTestBehavior.opaque,
-                      child: const Padding(
-                        padding: EdgeInsets.all(8),
-                        child: Icon(
-                          Icons.close,
-                          color: Color(0xFF3A1800),
-                          size: 28,
-                        ),
-                      ),
+                  Text(
+                    'Добавление команды игроков',
+                    style: const TextStyle(
+                      color: Color(0xFFFFFFFF),
+                      fontSize: 22,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: -0.5,
+                      height: 1.2,
                     ),
                   ),
-                  Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Название команды',
-                        style: const TextStyle(
-                          color: Color(0xFF3A1800),
-                          fontSize: 22,
-                          fontWeight: FontWeight.w500,
-                          letterSpacing: -0.5,
-                          height: 1.2,
+                  const SizedBox(height: 16),
+                  Container(
+                    constraints: const BoxConstraints(maxWidth: 520),
+                    padding: const EdgeInsets.fromLTRB(28, 24, 28, 28),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFF1E4),
+                      borderRadius: BorderRadius.circular(24),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.15),
+                          blurRadius: 24,
+                          offset: const Offset(0, 8),
                         ),
-                      ),
-                      const SizedBox(height: 16),
-                      TextField(
-                        controller: _controller,
-                        decoration: InputDecoration(
-                          hintText: 'Введите название команды',
-                          hintStyle: TextStyle(
-                            color: const Color(0xFF3A1800).withValues(alpha: 0.4),
-                            fontSize: 20,
-                            fontWeight: FontWeight.w400,
-                          ),
-                          filled: true,
-                          fillColor: const Color(0xFFFFFBF7),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(16),
-                            borderSide: BorderSide.none,
-                          ),
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 24,
-                            vertical: 20,
-                          ),
-                        ),
-                        style: const TextStyle(
-                          color: Color(0xFF3A1800),
-                          fontSize: 20,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                      const SizedBox(height: 32),
-                      Center(
-                        child: GestureDetector(
-                          onTap: () {
-                            Navigator.pop(context, _controller.text.trim());
-                          },
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 56,
-                              vertical: 18,
-                            ),
-                            decoration: BoxDecoration(
-                              gradient: const LinearGradient(
-                                begin: Alignment.topCenter,
-                                end: Alignment.bottomCenter,
-                                colors: [
-                                  Color(0xFFA35A33),
-                                  Color(0xFF863C15),
-                                ],
+                      ],
+                    ),
+                    child: Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        Positioned(
+                          top: 0,
+                          right: 0,
+                          child: GestureDetector(
+                            onTap: () => Navigator.pop(context),
+                            behavior: HitTestBehavior.opaque,
+                            child: const Padding(
+                              padding: EdgeInsets.all(8),
+                              child: Icon(
+                                Icons.close,
+                                color: Color(0xFF3A1800),
+                                size: 26,
                               ),
-                              borderRadius: BorderRadius.circular(37.5),
                             ),
-                            child: const Text(
-                              'Сохранить',
+                          ),
+                        ),
+                        Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Название команды',
                               style: TextStyle(
-                                color: Color(0xFFFFFFFF),
-                                fontSize: 22,
-                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF3A1800),
+                                fontSize: 20,
+                                fontWeight: FontWeight.w500,
                                 letterSpacing: -0.5,
-                                height: 1.0,
+                                height: 1.2,
                               ),
                             ),
-                          ),
+                            const SizedBox(height: 14),
+                            TextField(
+                              controller: _controller,
+                              autofocus: true,
+                              textInputAction: TextInputAction.done,
+                              onSubmitted: (_) =>
+                                  Navigator.pop(context, _controller.text.trim()),
+                              decoration: InputDecoration(
+                                hintText: 'Введите название команды',
+                                hintStyle: TextStyle(
+                                  color: const Color(0xFF3A1800).withValues(alpha: 0.4),
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w400,
+                                ),
+                                filled: true,
+                                fillColor: const Color(0xFFFFFBF7),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                  borderSide: BorderSide.none,
+                                ),
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 20,
+                                  vertical: 18,
+                                ),
+                              ),
+                              style: const TextStyle(
+                                color: Color(0xFF3A1800),
+                                fontSize: 18,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                            const SizedBox(height: 24),
+                            SizedBox(
+                              width: double.infinity,
+                              child: GestureDetector(
+                                onTap: () {
+                                  Navigator.pop(context, _controller.text.trim());
+                                },
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 18,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    gradient: const LinearGradient(
+                                      begin: Alignment.topCenter,
+                                      end: Alignment.bottomCenter,
+                                      colors: [
+                                        Color(0xFFA35A33),
+                                        Color(0xFF863C15),
+                                      ],
+                                    ),
+                                    borderRadius: BorderRadius.circular(37.5),
+                                  ),
+                                  child: const Center(
+                                    child: Text(
+                                      'Сохранить',
+                                      style: TextStyle(
+                                        color: Color(0xFFFFFFFF),
+                                        fontSize: 20,
+                                        fontWeight: FontWeight.w600,
+                                        letterSpacing: -0.5,
+                                        height: 1.0,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ],
               ),
             ),
-          ],
+          ),
         ),
       ),
     );

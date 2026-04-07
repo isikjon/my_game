@@ -3,6 +3,6 @@ import 'package:svoya_igra/main.dart';
 
 void main() {
   testWidgets('App builds', (WidgetTester tester) async {
-    await tester.pumpWidget(const SvoyaIgraApp());
+    await tester.pumpWidget(const ViktorinaApp());
   });
 }

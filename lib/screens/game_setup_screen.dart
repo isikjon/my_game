@@ -2,12 +2,20 @@ import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import '../widgets/question_editor_dialog.dart';
 import '../models/game_model.dart';
+import '../services/game_api_service.dart';
 import 'team_count_screen.dart';
 
 class GameSetupScreen extends StatefulWidget {
   final String gameName;
 
-  const GameSetupScreen({super.key, required this.gameName});
+  /// Код игры с сервера (POST /api/games). Если null — только локальная настройка, без PUT setup.
+  final String? gameCode;
+
+  const GameSetupScreen({
+    super.key,
+    required this.gameName,
+    this.gameCode,
+  });
 
   @override
   State<GameSetupScreen> createState() => _GameSetupScreenState();
@@ -34,9 +42,7 @@ class _GameSetupScreenState extends State<GameSetupScreen> {
   // Per-round topics. Each round has its own list of topics.
   final List<List<_TopicRow>> _roundTopics = [
     [
-      _TopicRow(name: 'Природа'),
-      _TopicRow(name: 'Еда'),
-      _TopicRow(name: 'Памятники'),
+      _TopicRow(name: 'Тема 1'),
     ],
   ];
 
@@ -59,17 +65,83 @@ class _GameSetupScreenState extends State<GameSetupScreen> {
     });
   }
 
+  void _deleteRound(int index) {
+    if (_rounds.length <= 1) return;
+    setState(() {
+      _rounds.removeAt(index);
+      _roundTimes.removeAt(index);
+      _roundTopics.removeAt(index);
+      if (_selectedRound >= _rounds.length) {
+        _selectedRound = _rounds.length - 1;
+      }
+    });
+  }
+
   void _deleteTopic(int index) {
     setState(() {
       _currentTopics.removeAt(index);
     });
   }
 
+  Future<void> _editTopicName(int topicIdx) async {
+    final topic = _currentTopics[topicIdx];
+    final controller = TextEditingController(text: topic.name);
+    final newName = await showDialog<String>(
+      context: context,
+      builder: (ctx) => GestureDetector(
+        onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
+        child: AlertDialog(
+          backgroundColor: const Color(0xFFFFF1E4),
+          title: const Text(
+            'Название темы',
+            style: TextStyle(
+              color: Color(0xFF3A1800),
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            style: const TextStyle(color: Color(0xFF3A1800), fontSize: 18),
+            decoration: const InputDecoration(
+              hintText: 'Например: Природа',
+              border: OutlineInputBorder(),
+              focusedBorder: OutlineInputBorder(
+                borderSide: BorderSide(color: Color(0xFF863C15), width: 2),
+              ),
+            ),
+            maxLength: 80,
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Отмена'),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFF863C15),
+              ),
+              onPressed: () {
+                final t = controller.text.trim();
+                if (t.isEmpty) return;
+                Navigator.pop(ctx, t);
+              },
+              child: const Text('Сохранить'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (newName != null && newName.isNotEmpty && mounted) {
+      setState(() => _currentTopics[topicIdx].name = newName);
+    }
+  }
+
   bool get _allQuestionsFilled {
     for (final topics in _roundTopics) {
       for (final topic in topics) {
         for (final q in topic.questions) {
-          if (q == null || q.question.isEmpty) return false;
+          if (q == null || q.question.isEmpty || q.answer.isEmpty) return false;
         }
       }
     }
@@ -92,7 +164,7 @@ class _GameSetupScreenState extends State<GameSetupScreen> {
     return '';
   }
 
-  void _onSave() {
+  Future<void> _onSave() async {
     if (!_allQuestionsFilled) {
       showDialog(
         context: context,
@@ -122,8 +194,9 @@ class _GameSetupScreenState extends State<GameSetupScreen> {
       return;
     }
 
-    // Build GameModel from current state
+    // Build GameModel from current state (имена тем как в UI → на сервер в topics[].name)
     final game = GameModel(
+      name: widget.gameName,
       rounds: List.generate(_rounds.length, (r) {
         final topics = _roundTopics[r];
         return GameRoundModel(
@@ -146,15 +219,109 @@ class _GameSetupScreenState extends State<GameSetupScreen> {
       }),
     );
 
+    final code = widget.gameCode;
+    if (code != null) {
+      if (!mounted) return;
+      showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => const PopScope(
+          canPop: false,
+          child: Center(
+            child: Card(
+              color: Color(0xFFFFF1E4),
+              child: Padding(
+                padding: EdgeInsets.all(28),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    CircularProgressIndicator(color: Color(0xFF863C15)),
+                    SizedBox(height: 16),
+                    Text(
+                      'Отправка на сервер…',
+                      style: TextStyle(
+                        color: Color(0xFF3A1800),
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      GameApiService? api;
+      try {
+        api = GameApiService();
+        await api.uploadSetup(code, game);
+        if (mounted) {
+          Navigator.of(context).pop();
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Схема игры и названия тем сохранены на сервере',
+              ),
+              backgroundColor: Color(0xFF863C15),
+            ),
+          );
+        }
+      } catch (e) {
+        if (mounted) Navigator.of(context).pop();
+        if (!mounted) return;
+        final skip = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            backgroundColor: const Color(0xFFFFF1E4),
+            title: const Text(
+              'Не удалось отправить на сервер',
+              style: TextStyle(
+                color: Color(0xFF3A1800),
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            content: SingleChildScrollView(
+              child: Text(
+                e.toString(),
+                style: const TextStyle(color: Color(0xFF3A1800), fontSize: 15),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Остаться'),
+              ),
+              FilledButton(
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xFF863C15),
+                ),
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Далее без сервера'),
+              ),
+            ],
+          ),
+        );
+        if (skip != true) return;
+      } finally {
+        api?.close();
+      }
+    }
+
+    if (!mounted) return;
     Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => TeamCountScreen(game: game)),
+      MaterialPageRoute(
+        builder: (_) =>
+            TeamCountScreen(game: game, gameCode: widget.gameCode),
+      ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      resizeToAvoidBottomInset: false,
       body: Container(
         decoration: const BoxDecoration(
           image: DecorationImage(
@@ -172,10 +339,12 @@ class _GameSetupScreenState extends State<GameSetupScreen> {
                 selectedRound: _selectedRound,
                 onSelectRound: (i) => setState(() => _selectedRound = i),
                 onAddRound: _addRound,
+                onDeleteRound: _deleteRound,
                 onTimeChanged: (idx, secs) =>
                     setState(() => _roundTimes[idx] = secs),
                 onSave: _onSave,
                 canSave: _allQuestionsFilled,
+                onBack: () => Navigator.pop(context),
               ),
               const SizedBox(height: 16),
               Expanded(
@@ -186,6 +355,7 @@ class _GameSetupScreenState extends State<GameSetupScreen> {
                     scores: _scores,
                     onAddTopic: _addTopic,
                     onDeleteTopic: _deleteTopic,
+                    onEditTopicName: _editTopicName,
                     onCellTap: (topicIdx, scoreIdx) async {
                       final existing =
                           _currentTopics[topicIdx].questions[scoreIdx];
@@ -231,9 +401,11 @@ class _TopBar extends StatefulWidget {
   final int selectedRound;
   final ValueChanged<int> onSelectRound;
   final VoidCallback onAddRound;
+  final void Function(int idx) onDeleteRound;
   final void Function(int idx, int secs) onTimeChanged;
-  final VoidCallback onSave;
+  final Future<void> Function() onSave;
   final bool canSave;
+  final VoidCallback onBack;
 
   const _TopBar({
     required this.rounds,
@@ -241,9 +413,11 @@ class _TopBar extends StatefulWidget {
     required this.selectedRound,
     required this.onSelectRound,
     required this.onAddRound,
+    required this.onDeleteRound,
     required this.onTimeChanged,
     required this.onSave,
     required this.canSave,
+    required this.onBack,
   });
 
   @override
@@ -338,7 +512,30 @@ class _TopBarState extends State<_TopBar> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Round cards
+          // Back button
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: GestureDetector(
+              onTap: widget.onBack,
+              child: Container(
+                width: 56,
+                height: 56,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF863C15),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: const Icon(Icons.arrow_back, color: Colors.white, size: 28),
+              ),
+            ),
+          ),
+          const SizedBox(width: 16),
+          // Round cards — scrollable when there are many rounds
+          Expanded(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
           ...widget.rounds.asMap().entries.map((entry) {
             final i = entry.key;
             final selected = i == widget.selectedRound;
@@ -351,6 +548,9 @@ class _TopBarState extends State<_TopBar> {
                         label: entry.value,
                         time: _formatTime(_currentSeconds),
                         onEditTime: _editTime,
+                        onDelete: widget.rounds.length > 1
+                            ? () => widget.onDeleteRound(i)
+                            : null,
                       )
                     : _InactiveRoundCard(label: entry.value),
               ),
@@ -373,18 +573,21 @@ class _TopBarState extends State<_TopBar> {
               ),
             ),
           ),
+          const SizedBox(width: 8),
+                ],
+              ),
+            ),
+          ),
 
-          const Spacer(),
-
-          // Save button
+          // Save button — всегда закреплена справа
           Padding(
             padding: const EdgeInsets.only(top: 8),
             child: GestureDetector(
-              onTap: widget.onSave,
+              onTap: widget.canSave ? () => widget.onSave() : null,
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 200),
                 padding: const EdgeInsets.symmetric(
-                  horizontal: 40,
+                  horizontal: 32,
                   vertical: 16,
                 ),
                 decoration: BoxDecoration(
@@ -403,7 +606,7 @@ class _TopBarState extends State<_TopBar> {
                   'Сохранить',
                   style: TextStyle(
                     color: Colors.white,
-                    fontSize: 22,
+                    fontSize: 20,
                     fontWeight: FontWeight.w600,
                     letterSpacing: -0.5,
                     height: 1.0,
@@ -424,11 +627,13 @@ class _ActiveRoundCard extends StatelessWidget {
   final String label;
   final String time;
   final VoidCallback onEditTime;
+  final VoidCallback? onDelete;
 
   const _ActiveRoundCard({
     required this.label,
     required this.time,
     required this.onEditTime,
+    this.onDelete,
   });
 
   @override
@@ -443,23 +648,45 @@ class _ActiveRoundCard extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           // Round name pill
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 14),
-            decoration: BoxDecoration(
-              color: const Color(0xFF9C532C),
-              borderRadius: BorderRadius.circular(50),
-            ),
-            child: Text(
-              label,
-              style: const TextStyle(
-                color: Colors.white,
-                fontFamily: 'SF Pro',
-                fontSize: 28,
-                fontWeight: FontWeight.w500,
-                letterSpacing: -0.9,
-                height: 1.0,
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 32, vertical: 14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF9C532C),
+                  borderRadius: BorderRadius.circular(50),
+                ),
+                child: Text(
+                  label,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontFamily: 'SF Pro',
+                    fontSize: 28,
+                    fontWeight: FontWeight.w500,
+                    letterSpacing: -0.9,
+                    height: 1.0,
+                  ),
+                ),
               ),
-            ),
+              if (onDelete != null)
+                Positioned(
+                  right: -10,
+                  top: -10,
+                  child: GestureDetector(
+                    onTap: onDelete,
+                    child: Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: const BoxDecoration(
+                        color: Color(0xFF863C15),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.close, color: Colors.white, size: 16),
+                    ),
+                  ),
+                ),
+            ],
           ),
           const SizedBox(height: 14),
           // Time row
@@ -594,6 +821,7 @@ class _TopicsTable extends StatelessWidget {
   final List<int> scores;
   final VoidCallback onAddTopic;
   final void Function(int) onDeleteTopic;
+  final void Function(int) onEditTopicName;
   final void Function(int topicIdx, int scoreIdx) onCellTap;
 
   const _TopicsTable({
@@ -601,6 +829,7 @@ class _TopicsTable extends StatelessWidget {
     required this.scores,
     required this.onAddTopic,
     required this.onDeleteTopic,
+    required this.onEditTopicName,
     required this.onCellTap,
   });
 
@@ -638,6 +867,7 @@ class _TopicsTable extends StatelessWidget {
                   topic: topics[i],
                   scores: scores,
                   onDelete: () => onDeleteTopic(i),
+                  onEditName: () => onEditTopicName(i),
                   onCellTap: (scoreIdx) => onCellTap(i, scoreIdx),
                 );
               },
@@ -661,7 +891,7 @@ class _TableHeader extends StatelessWidget {
       child: Row(
         children: [
           SizedBox(
-            width: 160,
+            width: 180,
             child: const Text(
               'Темы',
               style: TextStyle(
@@ -699,12 +929,14 @@ class _TopicTableRow extends StatelessWidget {
   final _TopicRow topic;
   final List<int> scores;
   final VoidCallback onDelete;
+  final VoidCallback onEditName;
   final void Function(int) onCellTap;
 
   const _TopicTableRow({
     required this.topic,
     required this.scores,
     required this.onDelete,
+    required this.onEditName,
     required this.onCellTap,
   });
 
@@ -715,23 +947,46 @@ class _TopicTableRow extends StatelessWidget {
       child: Row(
         children: [
           SizedBox(
-            width: 160,
+            width: 180,
             child: Container(
               padding:
-                  const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  const EdgeInsets.only(left: 12, right: 8, top: 8, bottom: 8),
               decoration: BoxDecoration(
                 color: const Color(0xFFFFE4C4),
                 borderRadius: BorderRadius.circular(14),
               ),
-              child: Text(
-                topic.name,
-                style: const TextStyle(
-                  color: Color(0xFF3A1800),
-                  fontSize: 16,
-                  fontWeight: FontWeight.w500,
-                  letterSpacing: -0.3,
-                ),
-                overflow: TextOverflow.ellipsis,
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      topic.name,
+                      style: const TextStyle(
+                        color: Color(0xFF3A1800),
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                        letterSpacing: -0.3,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  GestureDetector(
+                    onTap: onEditName,
+                    behavior: HitTestBehavior.opaque,
+                    child: Padding(
+                      padding: const EdgeInsets.all(4),
+                      child: SvgPicture.asset(
+                        'assets/icons/edit.svg',
+                        width: 20,
+                        height: 20,
+                        colorFilter: const ColorFilter.mode(
+                          Color(0xFF3A1800),
+                          BlendMode.srcIn,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),

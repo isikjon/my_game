@@ -64,14 +64,28 @@ class _ScoreAssignmentDialogState extends State<_ScoreAssignmentDialog> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text(
-                    'Получить очки',
-                    style: TextStyle(
-                      color: Color(0xFF3A1800),
-                      fontSize: 22,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: -0.4,
-                    ),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Получить очки',
+                        style: TextStyle(
+                          color: Color(0xFF3A1800),
+                          fontSize: 22,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: -0.4,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '+${widget.scoreValue} очков',
+                        style: const TextStyle(
+                          color: Color(0xFFE8841A),
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
                   ),
                   GestureDetector(
                     onTap: () => Navigator.pop(context, null),

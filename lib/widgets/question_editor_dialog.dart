@@ -242,172 +242,201 @@ class _QuestionAnswerDialogState extends State<_QuestionAnswerDialog> {
     super.dispose();
   }
 
+  void _goToAnswer() {
+    if (_questionCtrl.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Заполните вопрос'),
+          backgroundColor: Color(0xFF863C15),
+        ),
+      );
+      return;
+    }
+    setState(() => _showAnswer = true);
+  }
+
   void _save() {
+    final q = _questionCtrl.text.trim();
+    final a = _answerCtrl.text.trim();
+    if (q.isEmpty || a.isEmpty) {
+      final missing = q.isEmpty ? 'вопрос' : 'ответ';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Заполните $missing'),
+          backgroundColor: const Color(0xFF863C15),
+        ),
+      );
+      if (a.isEmpty && q.isNotEmpty) setState(() => _showAnswer = true);
+      return;
+    }
     Navigator.pop(
       context,
-      QuestionData(
-        type: widget.type,
-        question: _questionCtrl.text.trim(),
-        answer: _answerCtrl.text.trim(),
-      ),
+      QuestionData(type: widget.type, question: q, answer: a),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Material(
-        color: Colors.transparent,
-        child: Container(
-          margin: const EdgeInsets.symmetric(horizontal: 40),
-          padding: const EdgeInsets.fromLTRB(24, 24, 24, 24),
-          decoration: BoxDecoration(
-            color: const Color(0xFFFFF1E4),
-            borderRadius: BorderRadius.circular(24),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Title row
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+
+    return GestureDetector(
+      onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
+      child: Center(
+        child: SingleChildScrollView(
+          padding: EdgeInsets.fromLTRB(40, 20, 40, bottomInset + 20),
+          child: Material(
+            color: Colors.transparent,
+            child: Container(
+              padding: const EdgeInsets.fromLTRB(24, 24, 24, 24),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFF1E4),
+                borderRadius: BorderRadius.circular(24),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    _showAnswer ? 'Ответ' : 'Вопрос на ${widget.score}',
-                    style: TextStyle(
-                      color: const Color(0xFF3A1800),
-                      fontSize: 20,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: -0.4,
-                      decoration: _showAnswer
-                          ? TextDecoration.underline
-                          : TextDecoration.none,
-                      decorationColor: const Color(0xFF3A1800),
-                      decorationThickness: 2,
-                    ),
+                  // Title row
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        _showAnswer ? 'Ответ' : 'Вопрос на ${widget.score}',
+                        style: TextStyle(
+                          color: const Color(0xFF3A1800),
+                          fontSize: 20,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: -0.4,
+                          decoration: _showAnswer
+                              ? TextDecoration.underline
+                              : TextDecoration.none,
+                          decorationColor: const Color(0xFF3A1800),
+                          decorationThickness: 2,
+                        ),
+                      ),
+                      GestureDetector(
+                        onTap: () => Navigator.pop(context),
+                        behavior: HitTestBehavior.opaque,
+                        child: const Padding(
+                          padding: EdgeInsets.all(4),
+                          child: Icon(Icons.close,
+                              color: Color(0xFF3A1800), size: 26),
+                        ),
+                      ),
+                    ],
                   ),
-                  GestureDetector(
-                    onTap: () => Navigator.pop(context),
-                    behavior: HitTestBehavior.opaque,
-                    child: const Padding(
-                      padding: EdgeInsets.all(4),
-                      child: Icon(Icons.close,
-                          color: Color(0xFF3A1800), size: 26),
+                  const SizedBox(height: 16),
+                  // Text area — question
+                  if (!_showAnswer)
+                    Container(
+                      key: const ValueKey('question'),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFFDEB8),
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: TextField(
+                        controller: _questionCtrl,
+                        maxLines: 5,
+                        decoration: InputDecoration(
+                          hintText: 'Введите вопрос',
+                          hintStyle: TextStyle(
+                            color: const Color(0xFF3A1800).withValues(alpha: 0.4),
+                            fontSize: 17,
+                            fontWeight: FontWeight.w400,
+                          ),
+                          border: InputBorder.none,
+                          contentPadding: const EdgeInsets.all(18),
+                        ),
+                        style: const TextStyle(
+                          color: Color(0xFF3A1800),
+                          fontSize: 17,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
                     ),
+                  // Text area — answer
+                  if (_showAnswer)
+                    Container(
+                      key: const ValueKey('answer'),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFFDEB8),
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: TextField(
+                        controller: _answerCtrl,
+                        maxLines: 5,
+                        decoration: InputDecoration(
+                          hintText: 'Введите правильный ответ',
+                          hintStyle: TextStyle(
+                            color: const Color(0xFF3A1800).withValues(alpha: 0.4),
+                            fontSize: 17,
+                            fontWeight: FontWeight.w400,
+                          ),
+                          border: InputBorder.none,
+                          contentPadding: const EdgeInsets.all(18),
+                        ),
+                        style: const TextStyle(
+                          color: Color(0xFF3A1800),
+                          fontSize: 17,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  const SizedBox(height: 20),
+                  // Buttons
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: () =>
+                              setState(() => _showAnswer = !_showAnswer),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFFE8841A),
+                            foregroundColor: Colors.white,
+                            elevation: 0,
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(50),
+                            ),
+                          ),
+                          child: const Text(
+                            'Ответ',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: -0.3,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: _showAnswer ? _save : _goToAnswer,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF863C15),
+                            foregroundColor: Colors.white,
+                            elevation: 0,
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(50),
+                            ),
+                          ),
+                          child: Text(
+                            _showAnswer ? 'Сохранить' : 'Далее',
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: -0.3,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
-              const SizedBox(height: 16),
-              // Text area — question
-              if (!_showAnswer)
-                Container(
-                  key: const ValueKey('question'),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFFDEB8),
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: TextField(
-                    controller: _questionCtrl,
-                    maxLines: 5,
-                    decoration: InputDecoration(
-                      hintText: 'Введите вопрос',
-                      hintStyle: TextStyle(
-                        color: const Color(0xFF3A1800).withValues(alpha: 0.4),
-                        fontSize: 17,
-                        fontWeight: FontWeight.w400,
-                      ),
-                      border: InputBorder.none,
-                      contentPadding: const EdgeInsets.all(18),
-                    ),
-                    style: const TextStyle(
-                      color: Color(0xFF3A1800),
-                      fontSize: 17,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ),
-              // Text area — answer
-              if (_showAnswer)
-                Container(
-                  key: const ValueKey('answer'),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFFDEB8),
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: TextField(
-                    controller: _answerCtrl,
-                    maxLines: 5,
-                    decoration: InputDecoration(
-                      hintText: 'Введите правильный ответ',
-                      hintStyle: TextStyle(
-                        color: const Color(0xFF3A1800).withValues(alpha: 0.4),
-                        fontSize: 17,
-                        fontWeight: FontWeight.w400,
-                      ),
-                      border: InputBorder.none,
-                      contentPadding: const EdgeInsets.all(18),
-                    ),
-                    style: const TextStyle(
-                      color: Color(0xFF3A1800),
-                      fontSize: 17,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ),
-              const SizedBox(height: 20),
-              // Buttons
-              Row(
-                children: [
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: () =>
-                          setState(() => _showAnswer = !_showAnswer),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFFE8841A),
-                        foregroundColor: Colors.white,
-                        elevation: 0,
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(50),
-                        ),
-                      ),
-                      child: const Text(
-                        'Ответ',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w600,
-                          letterSpacing: -0.3,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: _save,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF863C15),
-                        foregroundColor: Colors.white,
-                        elevation: 0,
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(50),
-                        ),
-                      ),
-                      child: const Text(
-                        'Сохранить',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w600,
-                          letterSpacing: -0.3,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ],
+            ),
           ),
         ),
       ),

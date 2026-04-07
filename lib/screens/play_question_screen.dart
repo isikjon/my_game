@@ -75,7 +75,9 @@ class _PlayQuestionScreenState extends State<PlayQuestionScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return PopScope(
+      canPop: false,
+      child: Scaffold(
       body: Container(
         decoration: const BoxDecoration(
           image: DecorationImage(
@@ -134,8 +136,10 @@ class _PlayQuestionScreenState extends State<PlayQuestionScreen> {
                     const SizedBox(height: 36),
                     // Answer section
                     if (!_answerRevealed)
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
+                      Wrap(
+                        alignment: WrapAlignment.center,
+                        spacing: 16,
+                        runSpacing: 12,
                         children: [
                           // Reveal answer button
                           ElevatedButton(
@@ -160,7 +164,6 @@ class _PlayQuestionScreenState extends State<PlayQuestionScreen> {
                               ),
                             ),
                           ),
-                          const SizedBox(width: 16),
                           // Skip to scoring
                           ElevatedButton(
                             onPressed: _triggerScoring,
@@ -236,6 +239,7 @@ class _PlayQuestionScreenState extends State<PlayQuestionScreen> {
           ),
         ),
       ),
+    ),
     );
   }
 }

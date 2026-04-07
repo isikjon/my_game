@@ -33,7 +33,8 @@ class GameRoundModel {
 }
 
 class GameModel {
+  final String name;
   final List<GameRoundModel> rounds;
 
-  const GameModel({required this.rounds});
+  const GameModel({this.name = '', required this.rounds});
 }

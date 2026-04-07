@@ -1,7 +1,7 @@
 name: svoya_igra
-description: "Своя Игра"
+description: "Викторина"
 publish_to: 'none'
-version: 1.0.0+1
+version: 1.1.0+5
 
 environment:
   sdk: ^3.9.2
@@ -10,16 +10,30 @@ dependencies:
   flutter:
     sdk: flutter
   flutter_svg: ^2.0.0
+  http: ^1.2.2
+  socket_io_client: ^2.0.3+1
+  flutter_riverpod: ^2.5.1
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^5.0.0
+  flutter_launcher_icons: ^0.14.3
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: assets/branding/app_icon.png
+  remove_alpha_ios: true
+  web:
+    generate: true
+    image_path: assets/branding/app_icon.png
 
 flutter:
   uses-material-design: true
 
   assets:
     - assets/images/
+    - assets/branding/app_icon.png
     - assets/icons/play_button.svg
     - assets/icons/star-circle.svg
     - assets/icons/delete.svg

@@ -1,5 +1,6 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'mode_selection_screen.dart';
 
 class ScoreboardScreen extends StatefulWidget {
   final List<String>? teams;
@@ -104,12 +105,49 @@ class _ScoreboardScreenState extends State<ScoreboardScreen>
               return Padding(
                 padding: EdgeInsets.symmetric(
                   horizontal: constraints.maxWidth * 0.06,
-                  vertical: constraints.maxHeight * 0.06,
+                  vertical: constraints.maxHeight * 0.04,
                 ),
                 child: Center(
                   child: FittedBox(
                     fit: BoxFit.contain,
-                    child: _buildTeamsRow(),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _buildTeamsRow(),
+                        const SizedBox(height: 50),
+                        GestureDetector(
+                          onTap: () => Navigator.pushAndRemoveUntil(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const ModeSelectionScreen(),
+                            ),
+                            (_) => false,
+                          ),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 64, vertical: 22),
+                            decoration: BoxDecoration(
+                              gradient: const LinearGradient(
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                                colors: [Color(0xFFA35A33), Color(0xFF863C15)],
+                              ),
+                              borderRadius: BorderRadius.circular(50),
+                            ),
+                            child: const Text(
+                              'На главную',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 32,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: -0.6,
+                                height: 1.0,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               );

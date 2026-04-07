@@ -1,6 +1,6 @@
 {
-    "name": "Своя Игра",
-    "short_name": "Своя Игра",
+    "name": "Викторина",
+    "short_name": "Викторина",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

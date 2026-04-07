@@ -108,6 +108,58 @@ class _PlayGameBoardScreenState extends State<PlayGameBoardScreen> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
+                        // Round tabs (if more than 1)
+                        if (widget.game.rounds.length > 1) ...[
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: List.generate(
+                              widget.game.rounds.length,
+                              (ri) => Padding(
+                                padding: EdgeInsets.only(
+                                    right: ri < widget.game.rounds.length - 1
+                                        ? 16
+                                        : 0),
+                                child: GestureDetector(
+                                  onTap: () {
+                                    if (ri == _currentRound) return;
+                                    setState(() {
+                                      _currentRound = ri;
+                                      _initRoundState();
+                                    });
+                                  },
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 32, vertical: 14),
+                                    decoration: BoxDecoration(
+                                      color: ri == _currentRound
+                                          ? const Color(0xFF863C15)
+                                          : Colors.transparent,
+                                      borderRadius: BorderRadius.circular(50),
+                                      border: ri != _currentRound
+                                          ? Border.all(
+                                              color: const Color(0xFF863C15),
+                                              width: 3)
+                                          : null,
+                                    ),
+                                    child: Text(
+                                      widget.game.rounds[ri].name,
+                                      style: TextStyle(
+                                        color: ri == _currentRound
+                                            ? Colors.white
+                                            : const Color(0xFF863C15),
+                                        fontSize: 24,
+                                        fontWeight: FontWeight.w600,
+                                        letterSpacing: -0.4,
+                                        height: 1.0,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 30),
+                        ],
                         // Grid
                         ...List.generate(topics.length, (ti) {
                           return Padding(
