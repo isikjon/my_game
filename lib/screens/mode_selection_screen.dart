@@ -197,7 +197,6 @@ class ModeSelectionScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      // Не сжимаем тело при открытии клавиатуры — диалог сам справится
       resizeToAvoidBottomInset: false,
       body: Container(
         decoration: const BoxDecoration(
@@ -208,53 +207,58 @@ class ModeSelectionScreen extends StatelessWidget {
         ),
         child: SafeArea(
           child: Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Image.asset(
-                  'assets/branding/app_icon.png',
-                  width: 140,
-                  height: 140,
-                  fit: BoxFit.contain,
-                ),
-                const SizedBox(height: 28),
-                const Text(
-                  'Викторина',
-                  style: TextStyle(
-                    color: Color(0xFF3A1800),
-                    fontSize: 42,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: -1.0,
-                    height: 1.0,
-                  ),
-                ),
-                const SizedBox(height: 48),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: _ModeButton(
-                          label: 'Режим игры — Ведущий',
-                          onTap: () => _onHostTap(context),
-                        ),
+            child: SingleChildScrollView(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 20),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Image.asset(
+                      'assets/branding/app_icon.png',
+                      width: 140,
+                      height: 140,
+                      fit: BoxFit.contain,
+                    ),
+                    const SizedBox(height: 28),
+                    const Text(
+                      'Викторина',
+                      style: TextStyle(
+                        color: Color(0xFF3A1800),
+                        fontSize: 42,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: -1.0,
+                        height: 1.0,
                       ),
-                      const SizedBox(width: 20),
-                      Expanded(
-                        child: _ModeButton(
-                          label: 'Режим игры — Игроки',
-                          onTap: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => const PlayerJoinScreen(),
+                    ),
+                    const SizedBox(height: 48),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 24),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: _ModeButton(
+                              label: 'Режим игры — Ведущий',
+                              onTap: () => _onHostTap(context),
                             ),
                           ),
-                        ),
+                          const SizedBox(width: 20),
+                          Expanded(
+                            child: _ModeButton(
+                              label: 'Режим игры — Игроки',
+                              onTap: () => Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => const PlayerJoinScreen(),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
-              ],
+              ),
             ),
           ),
         ),

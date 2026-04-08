@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/game_state.dart';
@@ -45,13 +46,18 @@ class GameNotifier extends StateNotifier<GameState> {
   // ─── Event handlers ───────────────────────────────────────────────────────
 
   void _onGameStarted(dynamic data) {
-    if (data is! Map) return;
+    debugPrint('[DEBUG] GameNotifier: _onGameStarted received');
+    if (data is! Map) {
+      debugPrint('[DEBUG] GameNotifier: _onGameStarted ERROR - data is not a Map');
+      return;
+    }
     final rounds = parseRoundsFromServerJson(
       (data['rounds'] as List?) ?? [],
     );
     final teams = parseTeamsFromServerJson(
       (data['teams'] as List?) ?? [],
     );
+    debugPrint('[DEBUG] GameNotifier: _onGameStarted parsed rounds=${rounds.length}, teams=${teams.length}');
     state = state.copyWith(
       phase: GamePhase.board,
       rounds: rounds.isEmpty ? state.rounds : rounds,
@@ -59,6 +65,7 @@ class GameNotifier extends StateNotifier<GameState> {
       currentRound: (data['current_round'] as num?)?.toInt() ?? 0,
       usedQuestionIds: const {},
     );
+    debugPrint('[DEBUG] GameNotifier: state updated to phase=${state.phase}');
   }
 
   void _onQuestionSelected(dynamic data) {

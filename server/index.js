@@ -18,7 +18,11 @@ app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 const server = http.createServer(app);
 
 const io = new Server(server, {
-  cors: { origin: '*', methods: ['GET', 'POST'] },
+  cors: {
+    origin: '*',
+    methods: ['GET', 'POST'],
+    credentials: true
+  },
   pingInterval: 10000,
   pingTimeout: 5000,
 });

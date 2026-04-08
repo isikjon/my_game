@@ -108,6 +108,11 @@ class _HostLobbyScreenState extends ConsumerState<HostLobbyScreen> {
       rounds: widget.rounds,
     ).copyWith(usedQuestionIds: _usedQuestionIds);
 
+    debugPrint('[DEBUG] HostLobbyScreen: Starting game with ${initialState.teams.length} teams');
+
+    // Emit start-game BEFORE navigation to ensure server is ready
+    socket.startGame(widget.gameCode);
+
     // Navigate to LiveGameScreen with overridden providers
     Navigator.pushReplacement(
       context,
@@ -120,11 +125,6 @@ class _HostLobbyScreenState extends ConsumerState<HostLobbyScreen> {
         ),
       ),
     );
-
-    // Emit start-game after navigation so GameNotifier is already listening
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      socket.startGame(widget.gameCode);
-    });
   }
 
   @override

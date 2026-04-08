@@ -40,22 +40,75 @@ class GameApiService {
   /// GET /api/games — список всех существующих игр.
   Future<List<Map<String, dynamic>>> listGames() async {
     final uri = ServerConfig.uri('/api/games');
-    final resp = await _client.get(uri);
-    if (resp.statusCode != 200) {
-      throw GameApiException('Ошибка получения списка игр: ${resp.statusCode}');
+    debugPrint('[DEBUG] listGames: Requesting $uri');
+    try {
+      final resp = await _client.get(uri);
+      debugPrint('[DEBUG] listGames: Response status=${resp.statusCode}');
+      debugPrint('[DEBUG] listGames: Response body=${resp.body}');
+      
+      if (resp.statusCode != 200) {
+        debugPrint('[DEBUG] listGames: ERROR - non-200 status');
+        return [];
+      }
+      final decoded = jsonDecode(resp.body);
+      debugPrint('[DEBUG] listGames: Decoded type=${decoded.runtimeType}');
+      
+      if (decoded is List) {
+        return List<Map<String, dynamic>>.from(decoded);
+      }
+      debugPrint('[DEBUG] listGames: ERROR - decoded is not a List');
+      return [];
+    } catch (e, st) {
+      debugPrint('[DEBUG] listGames: EXCEPTION=$e');
+      debugPrint('[DEBUG] listGames: STACKTRACE=$st');
+      return [];
     }
-    return List<Map<String, dynamic>>.from(jsonDecode(resp.body));
   }
 
   /// GET /api/teams — список всех уникальных команд.
   Future<List<String>> listTeams() async {
     final uri = ServerConfig.uri('/api/teams');
+    debugPrint('[DEBUG] listTeams: Requesting $uri');
+    try {
+      final resp = await _client.get(uri);
+      debugPrint('[DEBUG] listTeams: Response status=${resp.statusCode}');
+      debugPrint('[DEBUG] listTeams: Response body=${resp.body}');
+
+      if (resp.statusCode != 200) {
+        debugPrint('[DEBUG] listTeams: ERROR - non-200 status');
+        return [];
+      }
+      final decoded = jsonDecode(resp.body);
+      debugPrint('[DEBUG] listTeams: Decoded type=${decoded.runtimeType}');
+
+      if (decoded is List) {
+        return decoded.map((t) {
+          if (t is Map && t.containsKey('name')) {
+            return t['name'].toString();
+          }
+          return t.toString();
+        }).toList();
+      }
+      debugPrint('[DEBUG] listTeams: ERROR - decoded is not a List');
+      return [];
+    } catch (e, st) {
+      debugPrint('[DEBUG] listTeams: EXCEPTION=$e');
+      debugPrint('[DEBUG] listTeams: STACKTRACE=$st');
+      return [];
+    }
+  }
+
+  /// GET /api/games/:code/teams — список команд конкретной игры.
+  Future<List<TeamState>> listTeamsForGame(String code) async {
+    final uri = ServerConfig.uri('/api/games/$code/teams');
     final resp = await _client.get(uri);
     if (resp.statusCode != 200) {
-      throw GameApiException('Ошибка получения списка команд: ${resp.statusCode}');
+      throw GameApiException('Ошибка получения команд игры: ${resp.statusCode}');
     }
     final list = jsonDecode(resp.body) as List;
-    return list.map((t) => (t as Map)['name'].toString()).toList();
+    return list
+        .map((t) => TeamState.fromJson(t as Map<String, dynamic>))
+        .toList();
   }
 
   /// PUT /api/games/:code/setup — то же дерево, что видит SQLite (включая `topics[].name`).

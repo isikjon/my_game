@@ -5,6 +5,7 @@ import '../widgets/add_team_dialog.dart';
 import '../widgets/create_game_dialog.dart';
 import '../services/game_api_service.dart';
 import 'game_setup_screen.dart';
+import 'team_count_screen.dart';
 
 class HostSetupScreen extends StatefulWidget {
   const HostSetupScreen({super.key});
@@ -30,11 +31,18 @@ class _HostSetupScreenState extends State<HostSetupScreen> {
   final Set<int> _selectedGameIndices = {};
 
   Future<void> _loadData() async {
+    debugPrint('[DEBUG] HostSetupScreen: _loadData started');
     final api = GameApiService();
     try {
       final games = await api.listGames();
+      debugPrint('[DEBUG] HostSetupScreen: games loaded (${games.length})');
       final teamNames = await api.listTeams();
-      if (!mounted) return;
+      debugPrint('[DEBUG] HostSetupScreen: teams loaded (${teamNames.length})');
+      
+      if (!mounted) {
+        debugPrint('[DEBUG] HostSetupScreen: _loadData finished but widget not mounted');
+        return;
+      }
       setState(() {
         _games.clear();
         _games.addAll(games.map((g) => _HostGameItem(
@@ -44,8 +52,10 @@ class _HostSetupScreenState extends State<HostSetupScreen> {
         _teams.clear();
         _teams.addAll(teamNames.map((name) => _TeamItem(name: name)));
       });
-    } catch (e) {
-      debugPrint('[HostSetupScreen] _loadData error: $e');
+      debugPrint('[DEBUG] HostSetupScreen: _loadData state updated');
+    } catch (e, st) {
+      debugPrint('[DEBUG] HostSetupScreen: _loadData ERROR: $e');
+      debugPrint('[DEBUG] HostSetupScreen: _loadData STACK: $st');
     } finally {
       api.close();
     }
@@ -165,37 +175,13 @@ class _HostSetupScreenState extends State<HostSetupScreen> {
     final name = await showCreateGameDialog(context);
     if (name == null || name.isEmpty) return;
 
-    GameApiService? api;
-    try {
-      api = GameApiService();
-      final code = await api.createGame(name);
-      if (!mounted) return;
-      setState(() {
-        _games.add(_HostGameItem(name: name, serverCode: code));
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Игра на сервере, код: $code'),
-          backgroundColor: const Color(0xFF863C15),
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _games.add(_HostGameItem(name: name, serverCode: null));
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Сервер недоступен ($e). Игра только локально — на сервер не уйдёт.',
-          ),
-          backgroundColor: const Color(0xFF9C532C),
-          duration: const Duration(seconds: 5),
-        ),
-      );
-    } finally {
-      api?.close();
-    }
+    if (!mounted) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => GameSetupScreen(gameName: name),
+      ),
+    );
   }
 
   @override
@@ -215,32 +201,8 @@ class _HostSetupScreenState extends State<HostSetupScreen> {
               LayoutBuilder(
                 builder: (context, constraints) {
                   final sectionHeight = constraints.maxHeight;
-                  final dividerHeight = sectionHeight.clamp(0.0, 400.0);
                   return Row(
                     children: [
-                      Expanded(
-                        child: RepaintBoundary(
-                          child: _TeamsSection(
-                            sectionHeight: sectionHeight,
-                            teams: _teams,
-                            selectionMode: _teamsSelectionMode,
-                            selectedIndices: _selectedTeamIndices,
-                            onAddTeam: _addTeam,
-                            onToggleSelectionMode: _toggleTeamsSelectionMode,
-                            onToggleSelection: _toggleTeamSelection,
-                            onDeleteSelected: _deleteSelectedTeams,
-                          ),
-                        ),
-                      ),
-                      Center(
-                        child: SizedBox(
-                          width: 5,
-                          height: dividerHeight,
-                          child: ColoredBox(
-                            color: Color(0xFF9C532C).withValues(alpha: 0.5),
-                          ),
-                        ),
-                      ),
                       Expanded(
                         child: RepaintBoundary(
                           child: _GamesSection(
@@ -252,17 +214,35 @@ class _HostSetupScreenState extends State<HostSetupScreen> {
                             onToggleSelectionMode: _toggleGamesSelectionMode,
                             onToggleSelection: _toggleGameSelection,
                             onDeleteSelected: _deleteSelectedGames,
-                            onStartGame: (i) {
+                            onStartGame: (i) async {
                               final g = _games[i];
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => GameSetupScreen(
-                                    gameName: g.name,
-                                    gameCode: g.serverCode,
+                              final code = g.serverCode;
+                              if (code == null) return;
+
+                              final api = GameApiService();
+                              try {
+                                final result = await api.fetchGame(code);
+                                if (!mounted) return;
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => TeamCountScreen(
+                                      game: result.game,
+                                      gameCode: code,
+                                    ),
                                   ),
-                                ),
-                              );
+                                );
+                              } catch (e) {
+                                if (!mounted) return;
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text('Ошибка загрузки игры: $e'),
+                                    backgroundColor: const Color(0xFF863C15),
+                                  ),
+                                );
+                              } finally {
+                                api.close();
+                              }
                             },
                           ),
                         ),

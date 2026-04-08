@@ -194,7 +194,7 @@ class _GameSetupScreenState extends State<GameSetupScreen> {
       return;
     }
 
-    // Build GameModel from current state (имена тем как в UI → на сервер в topics[].name)
+    // Build GameModel
     final game = GameModel(
       name: widget.gameName,
       rounds: List.generate(_rounds.length, (r) {
@@ -219,103 +219,81 @@ class _GameSetupScreenState extends State<GameSetupScreen> {
       }),
     );
 
-    final code = widget.gameCode;
-    if (code != null) {
-      if (!mounted) return;
-      showDialog<void>(
-        context: context,
-        barrierDismissible: false,
-        builder: (ctx) => const PopScope(
-          canPop: false,
-          child: Center(
-            child: Card(
-              color: Color(0xFFFFF1E4),
-              child: Padding(
-                padding: EdgeInsets.all(28),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    CircularProgressIndicator(color: Color(0xFF863C15)),
-                    SizedBox(height: 16),
-                    Text(
-                      'Отправка на сервер…',
-                      style: TextStyle(
-                        color: Color(0xFF3A1800),
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                      ),
+    // Show loading
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => const PopScope(
+        canPop: false,
+        child: Center(
+          child: Card(
+            color: Color(0xFFFFF1E4),
+            child: Padding(
+              padding: EdgeInsets.all(28),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircularProgressIndicator(color: Color(0xFF863C15)),
+                  SizedBox(height: 16),
+                  Text(
+                    'Отправка на сервер…',
+                    style: TextStyle(
+                      color: Color(0xFF3A1800),
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
           ),
         ),
-      );
-      GameApiService? api;
-      try {
-        api = GameApiService();
-        await api.uploadSetup(code, game);
-        if (mounted) {
-          Navigator.of(context).pop();
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                'Схема игры и названия тем сохранены на сервере',
-              ),
-              backgroundColor: Color(0xFF863C15),
-            ),
-          );
-        }
-      } catch (e) {
-        if (mounted) Navigator.of(context).pop();
-        if (!mounted) return;
-        final skip = await showDialog<bool>(
-          context: context,
-          builder: (ctx) => AlertDialog(
-            backgroundColor: const Color(0xFFFFF1E4),
-            title: const Text(
-              'Не удалось отправить на сервер',
-              style: TextStyle(
-                color: Color(0xFF3A1800),
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            content: SingleChildScrollView(
-              child: Text(
-                e.toString(),
-                style: const TextStyle(color: Color(0xFF3A1800), fontSize: 15),
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx, false),
-                child: const Text('Остаться'),
-              ),
-              FilledButton(
-                style: FilledButton.styleFrom(
-                  backgroundColor: const Color(0xFF863C15),
-                ),
-                onPressed: () => Navigator.pop(ctx, true),
-                child: const Text('Далее без сервера'),
-              ),
-            ],
-          ),
-        );
-        if (skip != true) return;
-      } finally {
-        api?.close();
-      }
-    }
-
-    if (!mounted) return;
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) =>
-            TeamCountScreen(game: game, gameCode: widget.gameCode),
       ),
     );
+
+    final api = GameApiService();
+    try {
+      String code;
+      if (widget.gameCode != null) {
+        code = widget.gameCode!;
+      } else {
+        // Create game first if it's a new one
+        code = await api.createGame(widget.gameName);
+      }
+
+      await api.uploadSetup(code, game);
+
+      if (mounted) {
+        Navigator.of(context).pop(); // Dismiss loading
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Схема игры сохранена'),
+            backgroundColor: Color(0xFF863C15),
+          ),
+        );
+        Navigator.pop(context); // Return to HostSetupScreen
+      }
+    } catch (e) {
+      if (mounted) Navigator.of(context).pop(); // Dismiss loading
+      if (!mounted) return;
+      
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: const Color(0xFFFFF1E4),
+          title: const Text('Ошибка сервера'),
+          content: Text(e.toString()),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('ОК'),
+            ),
+          ],
+        ),
+      );
+    } finally {
+      api.close();
+    }
   }
 
   @override
@@ -891,7 +869,7 @@ class _TableHeader extends StatelessWidget {
       child: Row(
         children: [
           SizedBox(
-            width: 180,
+            width: 200,
             child: const Text(
               'Темы',
               style: TextStyle(
@@ -947,7 +925,7 @@ class _TopicTableRow extends StatelessWidget {
       child: Row(
         children: [
           SizedBox(
-            width: 180,
+            width: 200,
             child: Container(
               padding:
                   const EdgeInsets.only(left: 12, right: 8, top: 8, bottom: 8),

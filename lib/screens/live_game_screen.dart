@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/game_state.dart';
 import '../state/providers.dart';
-import 'live_game_over_screen.dart';
+import 'scoreboard_screen.dart';
 
 /// Single screen that drives all game phases via Riverpod GameState.
 /// Phase rendering:
@@ -27,6 +27,8 @@ class _LiveGameScreenState extends ConsumerState<LiveGameScreen> {
   Widget build(BuildContext context) {
     final game = ref.watch(gameProvider);
 
+    debugPrint('[DEBUG] LiveGameScreen: build phase=${game.phase}, teams=${game.teams.length}');
+
     // Navigate to game over when phase changes
     if (game.phase == GamePhase.gameOver) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -34,7 +36,10 @@ class _LiveGameScreenState extends ConsumerState<LiveGameScreen> {
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(
-            builder: (_) => LiveGameOverScreen(teams: game.teams),
+            builder: (_) => ScoreboardScreen(
+              teams: game.teams.map((t) => t.name).toList(),
+              scores: game.scoreMap,
+            ),
           ),
         );
       });
@@ -71,6 +76,68 @@ class _LiveGameScreenState extends ConsumerState<LiveGameScreen> {
                   game: game,
                   onAssignScore: _onAssignScore,
                   onSkip: _onSkip,
+                ),
+
+              // ─── Host-only Back/End buttons ───────────────────────────────
+              if (game.isHost)
+                Positioned(
+                  left: 16,
+                  top: 16,
+                  child: Row(
+                    children: [
+                      GestureDetector(
+                        onTap: () => Navigator.pop(context),
+                        child: Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF863C15),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: const Icon(Icons.arrow_back,
+                              color: Colors.white, size: 24),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      GestureDetector(
+                        onTap: () async {
+                          final confirm = await showDialog<bool>(
+                            context: context,
+                            builder: (ctx) => AlertDialog(
+                              backgroundColor: const Color(0xFFFFF1E4),
+                              title: const Text('Завершить игру?'),
+                              content: const Text(
+                                  'Вы уверены, что хотите принудительно завершить игру и подвести итоги?'),
+                              actions: [
+                                TextButton(
+                                  onPressed: () => Navigator.pop(ctx, false),
+                                  child: const Text('Отмена'),
+                                ),
+                                FilledButton(
+                                  style: FilledButton.styleFrom(
+                                      backgroundColor: const Color(0xFF863C15)),
+                                  onPressed: () => Navigator.pop(ctx, true),
+                                  child: const Text('Завершить'),
+                                ),
+                              ],
+                            ),
+                          );
+                          if (confirm == true) {
+                            final socket = ref.read(socketServiceProvider);
+                            socket.endGame(widget.gameCode);
+                          }
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF863C15),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: const Icon(Icons.stop_circle_outlined,
+                              color: Colors.white, size: 24),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
             ],
           ),

@@ -78,7 +78,14 @@ class _TeamCountScreenState extends State<TeamCountScreen> {
     if (code != null) {
       final api = GameApiService();
       try {
-        await api.addTeamsBulk(code, List.of(_teams));
+        // Fetch current teams to avoid duplicates
+        final existingTeams = await api.listTeamsForGame(code);
+        final existingNames = existingTeams.map((t) => t.name).toSet();
+
+        final teamsToAdd = _teams.where((n) => !existingNames.contains(n)).toList();
+        if (teamsToAdd.isNotEmpty) {
+          await api.addTeamsBulk(code, teamsToAdd);
+        }
       } catch (_) {
         // Не блокируем игру, если сервер недоступен
       } finally {
@@ -123,138 +130,173 @@ class _TeamCountScreenState extends State<TeamCountScreen> {
           ),
         ),
         child: SafeArea(
-          child: Center(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 32),
-              child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Padding(
-                  padding: EdgeInsets.only(left: 4, bottom: 28),
-                  child: Text(
-                    'Количество команд',
-                    style: TextStyle(
-                      color: Color(0xFF3A1800),
-                      fontSize: 32,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: -0.6,
-                      height: 1.0,
-                    ),
-                  ),
-                ),
-                // Teams row
-                SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(
+          child: Stack(
+            children: [
+              Center(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 32),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      ...List.generate(_teams.length, (i) => Padding(
-                        padding: const EdgeInsets.only(right: 20),
-                        child: Stack(
+                      const Padding(
+                        padding: EdgeInsets.only(left: 4, bottom: 28),
+                        child: Text(
+                          'Количество команд',
+                          style: TextStyle(
+                            color: Color(0xFF3A1800),
+                            fontSize: 32,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: -0.6,
+                            height: 1.0,
+                          ),
+                        ),
+                      ),
+                      // Teams row
+                      SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            _TeamCard(name: _teams[i]),
-                            Positioned(
-                              top: 0,
-                              right: 0,
-                              child: GestureDetector(
-                                onTap: () => _removeTeam(i),
-                                child: Container(
-                                  padding: const EdgeInsets.all(4),
-                                  decoration: const BoxDecoration(
-                                    color: Color(0xFF863C15),
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: const Icon(Icons.close, color: Colors.white, size: 16),
-                                ),
-                              ),
-                            ),
+                            ...List.generate(
+                                _teams.length,
+                                (i) => Padding(
+                                      padding: const EdgeInsets.only(right: 20),
+                                      child: Stack(
+                                        children: [
+                                          _TeamCard(name: _teams[i]),
+                                          Positioned(
+                                            top: 0,
+                                            right: 0,
+                                            child: GestureDetector(
+                                              onTap: () => _removeTeam(i),
+                                              child: Container(
+                                                padding:
+                                                    const EdgeInsets.all(4),
+                                                decoration: const BoxDecoration(
+                                                  color: Color(0xFF863C15),
+                                                  shape: BoxShape.circle,
+                                                ),
+                                                child: const Icon(Icons.close,
+                                                    color: Colors.white,
+                                                    size: 16),
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    )),
+                            // Add button
+                            _AddTeamButton(onTap: _addTeam),
                           ],
                         ),
-                      )),
-                      // Add button
-                      _AddTeamButton(onTap: _addTeam),
-                    ],
-                  ),
-                ),
-                if (_existingTeamNames.isNotEmpty) ...[
-                  const SizedBox(height: 24),
-                  const Text(
-                    'Выбрать из ранее созданных:',
-                    style: TextStyle(
-                      color: Color(0xFF9C532C),
-                      fontSize: 16,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  SizedBox(
-                    height: 44,
-                    child: ListView.separated(
-                      scrollDirection: Axis.horizontal,
-                      itemCount: _existingTeamNames.length,
-                      separatorBuilder: (_, __) => const SizedBox(width: 8),
-                      itemBuilder: (context, i) {
-                        final name = _existingTeamNames[i];
-                        final isSelected = _teams.contains(name);
-                        return GestureDetector(
-                          onTap: () => _toggleExistingTeam(name),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 16),
-                            decoration: BoxDecoration(
-                              color: isSelected ? const Color(0xFF863C15) : const Color(0xFFFFF1E4),
-                              borderRadius: BorderRadius.circular(50),
-                              border: isSelected ? null : Border.all(color: const Color(0xFF863C15), width: 1.5),
+                      ),
+                      if (_existingTeamNames.isNotEmpty) ...[
+                        const SizedBox(height: 24),
+                        const Text(
+                          'Выбрать из ранее созданных:',
+                          style: TextStyle(
+                            color: Color(0xFF9C532C),
+                            fontSize: 16,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        SizedBox(
+                          height: 44,
+                          child: ListView.separated(
+                            scrollDirection: Axis.horizontal,
+                            itemCount: _existingTeamNames.length,
+                            separatorBuilder: (_, __) =>
+                                const SizedBox(width: 8),
+                            itemBuilder: (context, i) {
+                              final name = _existingTeamNames[i];
+                              final isSelected = _teams.contains(name);
+                              return GestureDetector(
+                                onTap: () => _toggleExistingTeam(name),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 16),
+                                  decoration: BoxDecoration(
+                                    color: isSelected
+                                        ? const Color(0xFF863C15)
+                                        : const Color(0xFFFFF1E4),
+                                    borderRadius: BorderRadius.circular(50),
+                                    border: isSelected
+                                        ? null
+                                        : Border.all(
+                                            color: const Color(0xFF863C15),
+                                            width: 1.5),
+                                  ),
+                                  alignment: Alignment.center,
+                                  child: Text(
+                                    name,
+                                    style: TextStyle(
+                                      color: isSelected
+                                          ? Colors.white
+                                          : const Color(0xFF3A1800),
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 40),
+                      // Continue button
+                      GestureDetector(
+                        onTap: _onContinue,
+                        child: Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 32,
+                            vertical: 20,
+                          ),
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: [Color(0xFFA35A33), Color(0xFF863C15)],
                             ),
-                            alignment: Alignment.center,
+                            borderRadius: BorderRadius.circular(50),
+                          ),
+                          child: const Center(
                             child: Text(
-                              name,
+                              'Продолжить',
                               style: TextStyle(
-                                color: isSelected ? Colors.white : const Color(0xFF3A1800),
+                                color: Colors.white,
+                                fontSize: 26,
                                 fontWeight: FontWeight.w600,
+                                letterSpacing: -0.5,
+                                height: 1.0,
                               ),
                             ),
                           ),
-                        );
-                      },
-                    ),
-                  ),
-                ],
-                const SizedBox(height: 40),
-                // Continue button
-                GestureDetector(
-                  onTap: _onContinue,
-                  child: Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 32,
-                      vertical: 20,
-                    ),
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [Color(0xFFA35A33), Color(0xFF863C15)],
-                      ),
-                      borderRadius: BorderRadius.circular(50),
-                    ),
-                    child: const Center(
-                      child: Text(
-                        'Продолжить',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 26,
-                          fontWeight: FontWeight.w600,
-                          letterSpacing: -0.5,
-                          height: 1.0,
                         ),
                       ),
-                    ),
+                    ],
                   ),
                 ),
-              ],
               ),
-            ),
+              Positioned(
+                left: 16,
+                top: 16,
+                child: GestureDetector(
+                  onTap: () => Navigator.pop(context),
+                  child: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF863C15),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(Icons.arrow_back,
+                        color: Colors.white, size: 24),
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       ),

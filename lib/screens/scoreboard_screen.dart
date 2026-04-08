@@ -159,27 +159,33 @@ class _ScoreboardScreenState extends State<ScoreboardScreen>
   }
 
   Widget _buildTeamsRow() {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: List.generate(_teamNames.length, (i) {
-        return Padding(
-          padding: EdgeInsets.only(right: i < _teamNames.length - 1 ? 70.0 : 0),
-          child: AnimatedBuilder(
-            animation: _entryAnims[i],
-            builder: (context, child) {
-              return Opacity(
-                opacity: _entryAnims[i].value,
-                child: Transform.translate(
-                  offset: Offset(0, 50 * (1 - _entryAnims[i].value)),
-                  child: child,
-                ),
-              );
-            },
-            child: _buildTeamColumn(i),
-          ),
-        );
-      }),
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: List.generate(_teamNames.length, (i) {
+            return Padding(
+              padding: EdgeInsets.only(right: i < _teamNames.length - 1 ? 40.0 : 0),
+              child: AnimatedBuilder(
+                animation: _entryAnims[i],
+                builder: (context, child) {
+                  return Opacity(
+                    opacity: _entryAnims[i].value,
+                    child: Transform.translate(
+                      offset: Offset(0, 50 * (1 - _entryAnims[i].value)),
+                      child: child,
+                    ),
+                  );
+                },
+                child: _buildTeamColumn(i),
+              ),
+            );
+          }),
+        ),
+      ),
     );
   }
 
@@ -187,20 +193,17 @@ class _ScoreboardScreenState extends State<ScoreboardScreen>
     final isWinner = index == _winnerIndex;
 
     return SizedBox(
-      width: 320,
+      width: 220,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          SizedBox(
-            height: 110,
-            child: Align(
-              alignment: Alignment.bottomCenter,
-              child: _buildScoreBadge(index, isWinner),
-            ),
-          ),
-          const SizedBox(height: 24),
+          // Score badge at the top
+          _buildScoreBadge(index, isWinner),
+          const SizedBox(height: 20),
+          // Icon card with crown
           _buildIconCardWithCrown(isWinner),
-          const SizedBox(height: 26),
+          const SizedBox(height: 20),
+          // Team name pill at the bottom
           _buildNamePill(index),
         ],
       ),
@@ -214,27 +217,31 @@ class _ScoreboardScreenState extends State<ScoreboardScreen>
         final displayed = (_countAnim.value * _scores[index]).round();
         final goldProgress = isWinner ? _crownAnim.value : 0.0;
         final bgColor = Color.lerp(
-          const Color(0xFFFFF1E4),
+          Colors.white.withValues(alpha: 0.9),
           const Color(0xFFFFD566),
           goldProgress,
         )!;
 
         return Container(
-          padding: EdgeInsets.symmetric(
-            horizontal: isWinner ? 52 : 40,
-            vertical: isWinner ? 24 : 18,
-          ),
+          padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
           decoration: BoxDecoration(
             color: bgColor,
-            borderRadius: BorderRadius.circular(30),
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.05),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+            ],
           ),
           child: Text(
             displayed.toString(),
             style: TextStyle(
               color: const Color(0xFF3A1800),
-              fontSize: isWinner ? 60 : 48,
-              fontWeight: FontWeight.w600,
-              letterSpacing: -0.9,
+              fontSize: isWinner ? 44 : 32,
+              fontWeight: FontWeight.w700,
+              letterSpacing: -0.5,
               height: 1.0,
             ),
           ),
@@ -248,17 +255,30 @@ class _ScoreboardScreenState extends State<ScoreboardScreen>
       clipBehavior: Clip.none,
       alignment: Alignment.bottomCenter,
       children: [
-        _buildIconCard(),
+        Container(
+          width: 180,
+          height: 180,
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.6),
+            borderRadius: BorderRadius.circular(32),
+          ),
+          child: Center(
+            child: Image.asset(
+              'assets/images/users.png',
+              width: 100,
+              height: 100,
+            ),
+          ),
+        ),
         if (isWinner)
           Positioned(
-            left: (280 - 107) / 2,
-            bottom: -30,
+            bottom: -15,
             child: ScaleTransition(
               scale: _crownAnim,
               child: Image.asset(
                 'assets/images/crown.png',
-                width: 107,
-                height: 107,
+                width: 70,
+                height: 70,
               ),
             ),
           ),
@@ -266,38 +286,20 @@ class _ScoreboardScreenState extends State<ScoreboardScreen>
     );
   }
 
-  Widget _buildIconCard() {
-    return Container(
-      width: 280,
-      height: 260,
-      decoration: BoxDecoration(
-        color: const Color(0xFFFFF1E4),
-        borderRadius: BorderRadius.circular(40),
-      ),
-      child: Center(
-        child: Image.asset(
-          'assets/images/users.png',
-          width: 130,
-          height: 130,
-        ),
-      ),
-    );
-  }
-
   Widget _buildNamePill(int index) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 44, vertical: 20),
+      padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
       decoration: BoxDecoration(
-        color: const Color(0xFFFFF1E4),
-        borderRadius: BorderRadius.circular(35),
+        color: Colors.white.withValues(alpha: 0.9),
+        borderRadius: BorderRadius.circular(25),
       ),
       child: Text(
         _teamNames[index],
         style: const TextStyle(
           color: Color(0xFF3A1800),
-          fontSize: 45,
+          fontSize: 22,
           fontWeight: FontWeight.w600,
-          letterSpacing: -0.9,
+          letterSpacing: -0.4,
           height: 1.0,
         ),
       ),

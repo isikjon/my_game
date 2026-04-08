@@ -3,10 +3,10 @@
     "short_name": "Викторина",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
-    "orientation": "portrait-primary",
+    "background_color": "#863C15",
+    "theme_color": "#863C15",
+    "description": "Викторина — викторина для компании и друзей.",
+    "orientation": "landscape",
     "prefer_related_applications": false,
     "icons": [
         {

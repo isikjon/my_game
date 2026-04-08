@@ -16,8 +16,12 @@ class SocketService {
   // ─── Connection lifecycle ─────────────────────────────────────────────────
 
   void connect() {
-    if (_socket != null) return; // already created (may still be connecting)
+    if (_socket != null) {
+      debugPrint('[DEBUG] Socket: connect() called but socket already exists. Connected: ${_socket!.connected}');
+      return; 
+    }
 
+    debugPrint('[DEBUG] Socket: Initializing connection to ${ServerConfig.baseUrl}');
     _socket = io.io(
       ServerConfig.baseUrl,
       io.OptionBuilder()
@@ -29,9 +33,10 @@ class SocketService {
           .build(),
     );
 
-    _socket!.onConnect((_) => debugPrint('[Socket] connected'));
-    _socket!.onDisconnect((r) => debugPrint('[Socket] disconnected: $r'));
-    _socket!.onConnectError((e) => debugPrint('[Socket] connect error: $e'));
+    _socket!.onConnect((_) => debugPrint('[DEBUG] Socket: CONNECTED (id: ${_socket!.id})'));
+    _socket!.onDisconnect((r) => debugPrint('[DEBUG] Socket: DISCONNECTED (reason: $r)'));
+    _socket!.onConnectError((e) => debugPrint('[DEBUG] Socket: CONNECT ERROR ($e)'));
+    _socket!.onError((e) => debugPrint('[DEBUG] Socket: GENERAL ERROR ($e)'));
 
     _socket!.connect();
   }
