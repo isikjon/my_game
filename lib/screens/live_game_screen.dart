@@ -1,16 +1,14 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/game_state.dart';
+import '../services/game_api_service.dart';
+import '../services/session_service.dart';
 import '../state/providers.dart';
 import 'scoreboard_screen.dart';
 
 /// Single screen that drives all game phases via Riverpod GameState.
-/// Phase rendering:
-///   board    → tappable grid (host) / locked grid + overlay (player)
-///   question → question text + countdown timer
-///   result   → answer reveal + score assignment (host) or wait (player)
-///   gameOver → navigates to LiveGameOverScreen
 class LiveGameScreen extends ConsumerStatefulWidget {
   final String gameCode;
 
@@ -23,16 +21,45 @@ class LiveGameScreen extends ConsumerStatefulWidget {
 class _LiveGameScreenState extends ConsumerState<LiveGameScreen> {
   static const List<int> _scores = [500, 1000, 1500, 2000, 2500];
 
+  String? _pendingCell;
+  bool _actionLock = false;
+  bool _connected = true;
+  StreamSubscription<bool>? _connSub;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final socket = ref.read(socketServiceProvider);
+      setState(() => _connected = socket.isConnected);
+      _connSub = socket.connectionStream.listen((connected) {
+        if (mounted) setState(() => _connected = connected);
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _connSub?.cancel();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     final game = ref.watch(gameProvider);
 
-    debugPrint('[DEBUG] LiveGameScreen: build phase=${game.phase}, teams=${game.teams.length}');
+    // Clear pending cell when phase leaves board
+    if (game.phase != GamePhase.board && _pendingCell != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() => _pendingCell = null);
+      });
+    }
 
-    // Navigate to game over when phase changes
     if (game.phase == GamePhase.gameOver) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
+        SessionService.clear();
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(
@@ -57,18 +84,27 @@ class _LiveGameScreenState extends ConsumerState<LiveGameScreen> {
         child: SafeArea(
           child: Stack(
             children: [
-              // ── Always-visible board ──────────────────────────────────────
               _BoardLayer(
                 game: game,
                 scores: _scores,
                 onCellTap: game.isHost ? _onHostSelectQuestion : null,
+                pendingCell: _pendingCell,
+                onEndGame: game.isHost ? _onEndGame : null,
               ),
 
-              // ── Phase overlays ────────────────────────────────────────────
               if (game.phase == GamePhase.board && !game.isHost)
                 const _PlayerBoardOverlay(),
 
-              if (game.phase == GamePhase.question)
+              if (game.phase == GamePhase.question &&
+                  game.activeQuestion?.type == 'cat' &&
+                  !game.catRevealed)
+                _CatOverlay(
+                  game: game,
+                  onRevealQuestion: _onRevealCatQuestion,
+                ),
+
+              if (game.phase == GamePhase.question &&
+                  (game.activeQuestion?.type != 'cat' || game.catRevealed))
                 _QuestionOverlay(game: game, onReveal: _onReveal),
 
               if (game.phase == GamePhase.result)
@@ -76,17 +112,20 @@ class _LiveGameScreenState extends ConsumerState<LiveGameScreen> {
                   game: game,
                   onAssignScore: _onAssignScore,
                   onSkip: _onSkip,
+                  onPenalizeTeam: _onPenalizeTeam,
                 ),
 
-              // ─── Host-only Back/End buttons ───────────────────────────────
               if (game.isHost)
                 Positioned(
                   left: 16,
                   top: 16,
                   child: Row(
                     children: [
-                      GestureDetector(
-                        onTap: () => Navigator.pop(context),
+                      _Pressable(
+                        onTap: () {
+                          SessionService.clear();
+                          Navigator.pop(context);
+                        },
                         child: Container(
                           padding: const EdgeInsets.all(8),
                           decoration: BoxDecoration(
@@ -98,34 +137,8 @@ class _LiveGameScreenState extends ConsumerState<LiveGameScreen> {
                         ),
                       ),
                       const SizedBox(width: 12),
-                      GestureDetector(
-                        onTap: () async {
-                          final confirm = await showDialog<bool>(
-                            context: context,
-                            builder: (ctx) => AlertDialog(
-                              backgroundColor: const Color(0xFFFFF1E4),
-                              title: const Text('Завершить игру?'),
-                              content: const Text(
-                                  'Вы уверены, что хотите принудительно завершить игру и подвести итоги?'),
-                              actions: [
-                                TextButton(
-                                  onPressed: () => Navigator.pop(ctx, false),
-                                  child: const Text('Отмена'),
-                                ),
-                                FilledButton(
-                                  style: FilledButton.styleFrom(
-                                      backgroundColor: const Color(0xFF863C15)),
-                                  onPressed: () => Navigator.pop(ctx, true),
-                                  child: const Text('Завершить'),
-                                ),
-                              ],
-                            ),
-                          );
-                          if (confirm == true) {
-                            final socket = ref.read(socketServiceProvider);
-                            socket.endGame(widget.gameCode);
-                          }
-                        },
+                      _Pressable(
+                        onTap: _onEndGame,
                         child: Container(
                           padding: const EdgeInsets.all(8),
                           decoration: BoxDecoration(
@@ -139,6 +152,53 @@ class _LiveGameScreenState extends ConsumerState<LiveGameScreen> {
                     ],
                   ),
                 ),
+
+              // ─── Connection status banner ──────────────────────────────────
+              if (!_connected)
+                Positioned(
+                  bottom: 72,
+                  left: 0,
+                  right: 0,
+                  child: Center(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 20, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFD94F00),
+                        borderRadius: BorderRadius.circular(50),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.3),
+                            blurRadius: 12,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          ),
+                          SizedBox(width: 10),
+                          Text(
+                            'Нет связи с сервером… Переподключение',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
             ],
           ),
         ),
@@ -146,9 +206,49 @@ class _LiveGameScreenState extends ConsumerState<LiveGameScreen> {
     );
   }
 
-  // ─── Host actions ─────────────────────────────────────────────────────────
+  // ─── End game ────────────────────────────────────────────────────────────
+
+  Future<void> _onEndGame() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFFFFF1E4),
+        title: const Text('Подвести итоги?'),
+        content: const Text(
+            'Вы уверены, что хотите завершить игру и подвести итоги?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Отмена'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFFFA8723)),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Подвести итоги'),
+          ),
+        ],
+      ),
+    );
+    if (confirm == true && mounted) {
+      SessionService.clear();
+      final socket = ref.read(socketServiceProvider);
+      socket.endGame(widget.gameCode);
+      final api = GameApiService();
+      try {
+        await api.deleteGame(widget.gameCode);
+      } catch (_) {}
+      api.close();
+    }
+  }
+
+  // ─── Host actions with debounce ───────────────────────────────────────────
 
   void _onHostSelectQuestion(int roundIdx, int topicIdx, int scoreIdx) {
+    if (_actionLock || _pendingCell != null) return;
+    _actionLock = true;
+    setState(() => _pendingCell = '$roundIdx-$topicIdx-$scoreIdx');
+
     final socket = ref.read(socketServiceProvider);
     socket.selectQuestion(
       code: widget.gameCode,
@@ -156,21 +256,60 @@ class _LiveGameScreenState extends ConsumerState<LiveGameScreen> {
       topicIdx: topicIdx,
       scoreIdx: scoreIdx,
     );
+
+    Future.delayed(const Duration(milliseconds: 500), () {
+      _actionLock = false;
+    });
   }
 
   void _onReveal() {
+    if (_actionLock) return;
+    _actionLock = true;
     final socket = ref.read(socketServiceProvider);
     socket.revealAnswer(widget.gameCode);
+    Future.delayed(const Duration(milliseconds: 500), () {
+      _actionLock = false;
+    });
   }
 
   void _onAssignScore(int teamId) {
+    if (_actionLock) return;
+    _actionLock = true;
     final socket = ref.read(socketServiceProvider);
     socket.assignScore(code: widget.gameCode, teamId: teamId);
+    Future.delayed(const Duration(milliseconds: 500), () {
+      _actionLock = false;
+    });
   }
 
   void _onSkip() {
+    if (_actionLock) return;
+    _actionLock = true;
     final socket = ref.read(socketServiceProvider);
     socket.skipQuestion(widget.gameCode);
+    Future.delayed(const Duration(milliseconds: 500), () {
+      _actionLock = false;
+    });
+  }
+
+  void _onRevealCatQuestion() {
+    if (_actionLock) return;
+    _actionLock = true;
+    final socket = ref.read(socketServiceProvider);
+    socket.revealCatQuestion(widget.gameCode);
+    Future.delayed(const Duration(milliseconds: 500), () {
+      _actionLock = false;
+    });
+  }
+
+  void _onPenalizeTeam(int teamId) {
+    if (_actionLock) return;
+    _actionLock = true;
+    final socket = ref.read(socketServiceProvider);
+    socket.penalizeTeam(code: widget.gameCode, teamId: teamId);
+    Future.delayed(const Duration(milliseconds: 500), () {
+      _actionLock = false;
+    });
   }
 }
 
@@ -179,13 +318,16 @@ class _LiveGameScreenState extends ConsumerState<LiveGameScreen> {
 class _BoardLayer extends StatelessWidget {
   final GameState game;
   final List<int> scores;
-  // null = board is locked (player mode)
   final void Function(int roundIdx, int topicIdx, int scoreIdx)? onCellTap;
+  final String? pendingCell;
+  final VoidCallback? onEndGame;
 
   const _BoardLayer({
     required this.game,
     required this.scores,
     this.onCellTap,
+    this.pendingCell,
+    this.onEndGame,
   });
 
   @override
@@ -199,14 +341,9 @@ class _BoardLayer extends StatelessWidget {
       builder: (context, constraints) {
         return Column(
           children: [
-            // Round tabs
             if (game.rounds.length > 1)
               _RoundTabs(game: game),
 
-            // Score header
-            _ScoreHeader(scores: scores),
-
-            // Topic rows
             Expanded(
               child: FittedBox(
                 fit: BoxFit.contain,
@@ -224,6 +361,7 @@ class _BoardLayer extends StatelessWidget {
                         usedQuestionIds: game.usedQuestionIds,
                         game: game,
                         onCellTap: onCellTap,
+                        pendingCell: pendingCell,
                       ),
                     );
                   }),
@@ -231,7 +369,34 @@ class _BoardLayer extends StatelessWidget {
               ),
             ),
 
-            // Scores footer
+            if (game.isHost && onEndGame != null)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 6),
+                child: _Pressable(
+                  onTap: onEndGame,
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFA8723),
+                      borderRadius: BorderRadius.circular(50),
+                    ),
+                    child: const Center(
+                      child: Text(
+                        'Итоги',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 22,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: -0.4,
+                          height: 1.0,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+
             _TeamScoresBar(teams: game.teams),
           ],
         );
@@ -322,6 +487,7 @@ class _TopicRow extends StatelessWidget {
   final Set<int> usedQuestionIds;
   final GameState game;
   final void Function(int roundIdx, int topicIdx, int scoreIdx)? onCellTap;
+  final String? pendingCell;
 
   const _TopicRow({
     required this.topicName,
@@ -331,10 +497,10 @@ class _TopicRow extends StatelessWidget {
     required this.usedQuestionIds,
     required this.game,
     required this.onCellTap,
+    this.pendingCell,
   });
 
   bool _isUsed(int scoreIdx) {
-    // Check coordinate-based active question
     final aq = game.activeQuestion;
     if (game.phase != GamePhase.board) {
       if (aq != null &&
@@ -345,9 +511,11 @@ class _TopicRow extends StatelessWidget {
       }
     }
 
-    // Check permanent used status from question IDs
+    if (roundIdx >= game.rounds.length) return false;
     final round = game.rounds[roundIdx];
+    if (topicIdx >= round.topics.length) return false;
     final topic = round.topics[topicIdx];
+    if (scoreIdx >= topic.questionIds.length) return false;
     final qid = topic.questionIds[scoreIdx];
     if (qid != null && game.usedQuestionIds.contains(qid)) {
       return true;
@@ -361,7 +529,6 @@ class _TopicRow extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        // Topic name
         Container(
           width: 200,
           height: 72,
@@ -388,37 +555,51 @@ class _TopicRow extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 14),
-        // Score cells
         ...List.generate(scores.length, (si) {
           final used = _isUsed(si);
-          final canTap = !used && onCellTap != null;
+          final isPending = pendingCell == '$roundIdx-$topicIdx-$si';
+          final canTap = !used && !isPending && pendingCell == null && onCellTap != null;
           return Padding(
             padding: EdgeInsets.only(right: si < scores.length - 1 ? 12 : 0),
-            child: GestureDetector(
+            child: _Pressable(
               onTap: canTap ? () => onCellTap!(roundIdx, topicIdx, si) : null,
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 180),
                 width: 110,
                 height: 72,
                 decoration: BoxDecoration(
-                  color: used
-                      ? const Color(0xFFD4B89A)
-                      : const Color(0xFF863C15),
+                  color: isPending
+                      ? const Color(0xFFA35A33)
+                      : used
+                          ? const Color(0xFFD4B89A).withValues(alpha: 0.5)
+                          : const Color(0xFF863C15),
                   borderRadius: BorderRadius.circular(18),
                 ),
                 alignment: Alignment.center,
-                child: Text(
-                  scores[si].toString(),
-                  style: TextStyle(
-                    color: used
-                        ? const Color(0xFFB89070)
-                        : Colors.white,
-                    fontSize: 28,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: -0.5,
-                    height: 1.0,
-                  ),
-                ),
+                child: isPending
+                    ? const SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2.5,
+                          color: Colors.white,
+                        ),
+                      )
+                    : Opacity(
+                        opacity: used ? 0.5 : 1.0,
+                        child: Text(
+                          scores[si].toString(),
+                          style: TextStyle(
+                            color: used
+                                ? const Color(0xFFB89070)
+                                : Colors.white,
+                            fontSize: 28,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: -0.5,
+                            height: 1.0,
+                          ),
+                        ),
+                      ),
               ),
             ),
           );
@@ -511,6 +692,83 @@ class _PlayerBoardOverlay extends StatelessWidget {
 
 // ─── Question Overlay ─────────────────────────────────────────────────────────
 
+// ─── Cat Overlay ──────────────────────────────────────────────────────────────
+
+class _CatOverlay extends StatelessWidget {
+  final GameState game;
+  final VoidCallback onRevealQuestion;
+
+  const _CatOverlay({required this.game, required this.onRevealQuestion});
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned.fill(
+      child: Container(
+        color: Colors.black.withValues(alpha: 0.80),
+        child: Center(
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 480),
+            margin: const EdgeInsets.symmetric(horizontal: 32),
+            padding: const EdgeInsets.all(40),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFF1E4),
+              borderRadius: BorderRadius.circular(28),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(
+                  Icons.pets,
+                  size: 72,
+                  color: Color(0xFF863C15),
+                ),
+                const SizedBox(height: 20),
+                const Text(
+                  'Кот в мешке!',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Color(0xFF3A1800),
+                    fontSize: 32,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.5,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'Команда выбирает, кто будет отвечать',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Color(0xFF9C532C),
+                    fontSize: 18,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 32),
+                if (game.isHost)
+                  _ActionButton(
+                    label: 'Показать вопрос',
+                    onTap: onRevealQuestion,
+                  )
+                else
+                  const Text(
+                    'Ожидайте ведущего…',
+                    style: TextStyle(
+                      color: Color(0xFF9C532C),
+                      fontSize: 18,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Question Overlay ─────────────────────────────────────────────────────────
+
 class _QuestionOverlay extends StatelessWidget {
   final GameState game;
   final VoidCallback onReveal;
@@ -537,6 +795,32 @@ class _QuestionOverlay extends StatelessWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                if (aq.type == 'bonus') ...[
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 20, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFA8723),
+                      borderRadius: BorderRadius.circular(50),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.star, color: Colors.white, size: 20),
+                        SizedBox(width: 6),
+                        Text(
+                          'БОНУС x2',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                ],
                 // Score badge
                 Container(
                   padding: const EdgeInsets.symmetric(
@@ -624,22 +908,62 @@ class _TimerDisplay extends StatelessWidget {
   }
 }
 
-// ─── Result Overlay ───────────────────────────────────────────────────────────
+// ─── Result Overlay (sequential turn-passing) ────────────────────────────────
 
-class _ResultOverlay extends StatelessWidget {
+class _ResultOverlay extends StatefulWidget {
   final GameState game;
   final void Function(int teamId) onAssignScore;
   final VoidCallback onSkip;
+  final void Function(int teamId) onPenalizeTeam;
 
   const _ResultOverlay({
     required this.game,
     required this.onAssignScore,
     required this.onSkip,
+    required this.onPenalizeTeam,
   });
 
   @override
+  State<_ResultOverlay> createState() => _ResultOverlayState();
+}
+
+class _ResultOverlayState extends State<_ResultOverlay> {
+  int _currentTeamIndex = 0;
+  final Set<int> _penalizedTeamIds = {};
+  bool _finished = false;
+
+  void _onCorrect(int teamId) {
+    widget.onAssignScore(teamId);
+  }
+
+  void _onWrong(int teamId) {
+    _penalizedTeamIds.add(teamId);
+    widget.onPenalizeTeam(teamId);
+    _advanceToNext();
+  }
+
+  void _onDidNotAnswer() {
+    _advanceToNext();
+  }
+
+  void _advanceToNext() {
+    final nextIdx = _currentTeamIndex + 1;
+    if (nextIdx >= widget.game.teams.length) {
+      setState(() => _finished = true);
+      widget.onSkip();
+    } else {
+      setState(() => _currentTeamIndex = nextIdx);
+    }
+  }
+
+  void _skipAll() {
+    widget.onSkip();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final aq = game.activeQuestion;
+    final aq = widget.game.activeQuestion;
+    final teams = widget.game.teams;
 
     return Positioned.fill(
       child: Container(
@@ -657,7 +981,6 @@ class _ResultOverlay extends StatelessWidget {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // Answer
                   const Text(
                     'Правильный ответ',
                     style: TextStyle(
@@ -675,7 +998,7 @@ class _ResultOverlay extends StatelessWidget {
                       borderRadius: BorderRadius.circular(16),
                     ),
                     child: Text(
-                      game.revealedAnswer ?? '—',
+                      widget.game.revealedAnswer ?? '—',
                       textAlign: TextAlign.center,
                       style: const TextStyle(
                         color: Color(0xFF3A1800),
@@ -688,7 +1011,9 @@ class _ResultOverlay extends StatelessWidget {
                   if (aq != null) ...[
                     const SizedBox(height: 8),
                     Text(
-                      '${aq.score} очков',
+                      aq.type == 'bonus'
+                          ? '${aq.score} очков (x2 бонус)'
+                          : '${aq.score} очков',
                       style: const TextStyle(
                         color: Color(0xFF9C532C),
                         fontSize: 16,
@@ -699,58 +1024,116 @@ class _ResultOverlay extends StatelessWidget {
 
                   const SizedBox(height: 24),
 
-                  // Host: assign score OR player: wait
-                  if (game.isHost) ...[
-                    const Text(
-                      'Кто ответил правильно?',
-                      style: TextStyle(
-                        color: Color(0xFF3A1800),
-                        fontSize: 18,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    Wrap(
-                      spacing: 12,
-                      runSpacing: 12,
-                      alignment: WrapAlignment.center,
-                      children: game.teams
-                          .map((t) => _ActionButton(
-                                label: t.name,
-                                onTap: () => onAssignScore(t.id),
-                              ))
-                          .toList(),
-                    ),
-                    const SizedBox(height: 12),
-                    GestureDetector(
-                      onTap: onSkip,
-                      child: const Text(
-                        'Никто не ответил',
-                        style: TextStyle(
-                          color: Color(0xFF9C532C),
-                          fontSize: 16,
-                          fontWeight: FontWeight.w500,
-                          decoration: TextDecoration.underline,
-                          decorationColor: Color(0xFF9C532C),
+                  if (widget.game.isHost && !_finished) ...[
+                    if (_currentTeamIndex < teams.length) ...[
+                      Text(
+                        'Отвечает: ${teams[_currentTeamIndex].name}',
+                        style: const TextStyle(
+                          color: Color(0xFF3A1800),
+                          fontSize: 20,
+                          fontWeight: FontWeight.w700,
                         ),
                       ),
-                    ),
-                  ] else ...[
-                    // Score update feedback for players
-                    if (game.awardedTeamId != null)
+                      const SizedBox(height: 6),
+                      Text(
+                        'Команда ${_currentTeamIndex + 1} из ${teams.length}',
+                        style: const TextStyle(
+                          color: Color(0xFF9C532C),
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          _Pressable(
+                            onTap: () =>
+                                _onCorrect(teams[_currentTeamIndex].id),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 20, vertical: 12),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF2E7D32),
+                                borderRadius: BorderRadius.circular(50),
+                              ),
+                              child: Text(
+                                'Правильно +${aq?.score ?? 0}',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          _Pressable(
+                            onTap: () =>
+                                _onWrong(teams[_currentTeamIndex].id),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 20, vertical: 12),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFD94F00),
+                                borderRadius: BorderRadius.circular(50),
+                              ),
+                              child: Text(
+                                'Неправильно -${aq?.score ?? 0}',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      _Pressable(
+                        onTap: _onDidNotAnswer,
+                        child: const Text(
+                          'Не отвечала',
+                          style: TextStyle(
+                            color: Color(0xFF9C532C),
+                            fontSize: 16,
+                            fontWeight: FontWeight.w500,
+                            decoration: TextDecoration.underline,
+                            decorationColor: Color(0xFF9C532C),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      _Pressable(
+                        onTap: _skipAll,
+                        child: const Text(
+                          'Пропустить всех',
+                          style: TextStyle(
+                            color: Color(0xFF9C532C),
+                            fontSize: 14,
+                            fontWeight: FontWeight.w400,
+                            decoration: TextDecoration.underline,
+                            decorationColor: Color(0xFF9C532C),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ] else if (!widget.game.isHost) ...[
+                    if (widget.game.awardedTeamId != null)
                       _ScoreAwardedBadge(
-                        teamName: game.teams
+                        teamName: widget.game.teams
                             .firstWhere(
-                              (t) => t.id == game.awardedTeamId,
-                              orElse: () => TeamState(
+                              (t) => t.id == widget.game.awardedTeamId,
+                              orElse: () => const TeamState(
                                   id: 0, name: '?', score: 0),
                             )
                             .name,
-                        score: game.awardedScore ?? 0,
+                        score: widget.game.awardedScore ?? 0,
                       )
                     else
                       const Text(
-                        'Ведущий присваивает очки…',
+                        'Ведущий оценивает ответы…',
                         style: TextStyle(
                           color: Color(0xFF9C532C),
                           fontSize: 18,
@@ -796,6 +1179,66 @@ class _ScoreAwardedBadge extends StatelessWidget {
 
 // ─── Shared UI primitives ─────────────────────────────────────────────────────
 
+/// Wraps any child with scale-down press feedback.
+class _Pressable extends StatefulWidget {
+  final Widget child;
+  final VoidCallback? onTap;
+
+  const _Pressable({required this.child, this.onTap});
+
+  @override
+  State<_Pressable> createState() => _PressableState();
+}
+
+class _PressableState extends State<_Pressable>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+  late final Animation<double> _scale;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 80),
+      reverseDuration: const Duration(milliseconds: 120),
+    );
+    _scale = Tween(begin: 1.0, end: 0.92).animate(
+      CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut),
+    );
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  void _onTapDown(TapDownDetails _) {
+    if (widget.onTap != null) _ctrl.forward();
+  }
+
+  void _onTapUp(TapUpDetails _) {
+    _ctrl.reverse();
+  }
+
+  void _onTapCancel() {
+    _ctrl.reverse();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: widget.onTap,
+      onTapDown: _onTapDown,
+      onTapUp: _onTapUp,
+      onTapCancel: _onTapCancel,
+      child: ScaleTransition(scale: _scale, child: widget.child),
+    );
+  }
+}
+
 class _ActionButton extends StatelessWidget {
   final String label;
   final VoidCallback? onTap;
@@ -804,7 +1247,7 @@ class _ActionButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    return _Pressable(
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14),

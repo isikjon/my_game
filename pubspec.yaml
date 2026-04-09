@@ -1,7 +1,7 @@
 name: svoya_igra
 description: "Викторина"
 publish_to: 'none'
-version: 1.1.0+5
+version: 1.3.0+7
 
 environment:
   sdk: ^3.9.2
@@ -11,8 +11,9 @@ dependencies:
     sdk: flutter
   flutter_svg: ^2.0.0
   http: ^1.2.2
-  socket_io_client: ^2.0.3+1
+  socket_io_client: ^3.0.0
   flutter_riverpod: ^2.5.1
+  shared_preferences: ^2.5.5
 dev_dependencies:
   flutter_test:
     sdk: flutter

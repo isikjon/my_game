@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'dart:io' as dartio;
 import 'package:flutter/foundation.dart';
 import 'package:socket_io_client/socket_io_client.dart' as io;
 
@@ -13,38 +15,100 @@ class SocketService {
 
   bool get isConnected => _socket?.connected ?? false;
 
+  /// Stream that emits true/false when connection state changes.
+  final _connectionController = StreamController<bool>.broadcast();
+  Stream<bool> get connectionStream => _connectionController.stream;
+
   // ─── Connection lifecycle ─────────────────────────────────────────────────
 
   void connect() {
     if (_socket != null) {
-      debugPrint('[DEBUG] Socket: connect() called but socket already exists. Connected: ${_socket!.connected}');
-      return; 
+      if (!_socket!.connected) {
+        debugPrint('[Socket] reconnecting existing socket...');
+        _socket!.connect();
+      }
+      return;
     }
 
-    debugPrint('[DEBUG] Socket: Initializing connection to ${ServerConfig.baseUrl}');
+    debugPrint('[Socket] connecting to ${ServerConfig.baseUrl}');
+
+    // Manual HTTP diagnostic to socket.io endpoint
+    _testSocketEndpoint();
+
     _socket = io.io(
       ServerConfig.baseUrl,
       io.OptionBuilder()
-          .setTransports(['websocket'])
+          .setTransports(['websocket', 'polling'])
           .disableAutoConnect()
           .enableReconnection()
-          .setReconnectionAttempts(10)
-          .setReconnectionDelay(2000)
+          .setReconnectionDelay(1000)
+          .setReconnectionDelayMax(10000)
+          .setReconnectionAttempts(999999)
           .build(),
     );
 
-    _socket!.onConnect((_) => debugPrint('[DEBUG] Socket: CONNECTED (id: ${_socket!.id})'));
-    _socket!.onDisconnect((r) => debugPrint('[DEBUG] Socket: DISCONNECTED (reason: $r)'));
-    _socket!.onConnectError((e) => debugPrint('[DEBUG] Socket: CONNECT ERROR ($e)'));
-    _socket!.onError((e) => debugPrint('[DEBUG] Socket: GENERAL ERROR ($e)'));
+    _socket!.onConnect((_) {
+      debugPrint('[Socket] CONNECTED (id: ${_socket!.id})');
+      _connectionController.add(true);
+    });
+    _socket!.onDisconnect((r) {
+      debugPrint('[Socket] DISCONNECTED (reason: $r)');
+      _connectionController.add(false);
+    });
+    _socket!.onReconnect((_) {
+      debugPrint('[Socket] RECONNECTED');
+      _connectionController.add(true);
+    });
+    _socket!.onReconnectAttempt((attempt) {
+      debugPrint('[Socket] reconnect attempt #$attempt');
+    });
+    _socket!.onConnectError((e) {
+      debugPrint('[Socket] CONNECT ERROR ($e)');
+      debugPrint('[Socket] CONNECT ERROR type: ${e.runtimeType}');
+    });
+    _socket!.onError((e) {
+      debugPrint('[Socket] ERROR ($e)');
+      debugPrint('[Socket] ERROR type: ${e.runtimeType}');
+    });
 
     _socket!.connect();
+  }
+
+  Future<void> _testSocketEndpoint() async {
+    try {
+      final url = '${ServerConfig.baseUrl}/socket.io/?EIO=4&transport=polling';
+      debugPrint('[Socket-DIAG] Testing: $url');
+      final client = dartio.HttpClient();
+      client.connectionTimeout = const Duration(seconds: 10);
+      final request = await client.getUrl(Uri.parse(url));
+      final response = await request.close();
+      final body = await response.transform(const dartio.SystemEncoding().decoder).join();
+      debugPrint('[Socket-DIAG] HTTP ${response.statusCode}: ${body.substring(0, body.length.clamp(0, 200))}');
+      client.close();
+    } catch (e) {
+      debugPrint('[Socket-DIAG] FAILED: $e');
+    }
+
+    try {
+      final wsUrl = '${ServerConfig.baseUrl.replaceFirst('https', 'wss')}/socket.io/?EIO=4&transport=websocket';
+      debugPrint('[Socket-DIAG] Testing WSS: $wsUrl');
+      final ws = await dartio.WebSocket.connect(wsUrl).timeout(const Duration(seconds: 10));
+      debugPrint('[Socket-DIAG] WSS connected OK, readyState=${ws.readyState}');
+      await ws.close();
+    } catch (e) {
+      debugPrint('[Socket-DIAG] WSS FAILED: $e');
+    }
   }
 
   void disconnect() {
     _socket?.disconnect();
     _socket?.dispose();
     _socket = null;
+  }
+
+  void dispose() {
+    disconnect();
+    _connectionController.close();
   }
 
   /// Calls [action] immediately if already connected, otherwise waits for
@@ -61,7 +125,6 @@ class SocketService {
       action();
       return;
     }
-    // One-shot listeners — declared before use so they can reference each other.
     late void Function(dynamic) connectHandler;
     late void Function(dynamic) errorHandler;
     connectHandler = (_) {
@@ -92,7 +155,11 @@ class SocketService {
 
   void _emit(String event, dynamic data, [AckHandler? ack]) {
     if (_socket == null || !_socket!.connected) {
-      debugPrint('[Socket] emit "$event" skipped — not connected');
+      debugPrint('[Socket] emit "$event" skipped — not connected, will retry on reconnect');
+      // Try to reconnect
+      if (_socket != null && !_socket!.connected) {
+        _socket!.connect();
+      }
       return;
     }
     if (ack != null) {
@@ -110,22 +177,18 @@ class SocketService {
 
   // ─── Typed host emit helpers ──────────────────────────────────────────────
 
-  /// HOST: Register as game host and receive current game state.
   void hostGame(String code, {AckHandler? ack}) {
     _emit('host-game', code, ack);
   }
 
-  /// PLAYER: Join a game room.
   void joinGame(String code, {AckHandler? ack}) {
     _emit('join-game', code, ack);
   }
 
-  /// HOST: Start the game — triggers `game-started` broadcast.
   void startGame(String code, {AckHandler? ack}) {
     _emit('start-game', code, ack);
   }
 
-  /// HOST: Select a question — triggers `question-selected` + timer broadcast.
   void selectQuestion({
     required String code,
     required int roundIdx,
@@ -140,12 +203,22 @@ class SocketService {
     );
   }
 
-  /// HOST: Reveal the correct answer — triggers `answer-revealed` broadcast.
   void revealAnswer(String code, {AckHandler? ack}) {
     _emit('reveal-answer', code, ack);
   }
 
-  /// HOST: Award score to a team — triggers `score-updated` broadcast.
+  void revealCatQuestion(String code, {AckHandler? ack}) {
+    _emit('reveal-cat-question', code, ack);
+  }
+
+  void penalizeTeam({
+    required String code,
+    required int teamId,
+    AckHandler? ack,
+  }) {
+    _emit('penalize-team', {'code': code, 'teamId': teamId}, ack);
+  }
+
   void assignScore({
     required String code,
     required int teamId,
@@ -154,12 +227,10 @@ class SocketService {
     _emit('assign-score', {'code': code, 'teamId': teamId}, ack);
   }
 
-  /// HOST: Skip question without awarding — triggers `question-skipped` broadcast.
   void skipQuestion(String code, {AckHandler? ack}) {
     _emit('skip-question', code, ack);
   }
 
-  /// HOST: Advance to a new round — triggers `round-changed` broadcast.
   void nextRound({
     required String code,
     required int roundIdx,
@@ -168,12 +239,10 @@ class SocketService {
     _emit('next-round', {'code': code, 'roundIdx': roundIdx}, ack);
   }
 
-  /// HOST: End the game — triggers `game-ended` broadcast.
   void endGame(String code, {AckHandler? ack}) {
     _emit('end-game', code, ack);
   }
 
-  /// ANY: Request full current state (used for reconnection).
   void getState(String code, {AckHandler? ack}) {
     _emit('get-state', code, ack);
   }

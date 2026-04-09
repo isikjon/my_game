@@ -186,4 +186,56 @@ router.get('/games/:code/teams', (req, res) => {
   }
 });
 
+// ─── GET /api/templates — list all templates ─────────────────────────────────
+
+router.get('/templates', (req, res) => {
+  try {
+    const templates = db.listTemplates();
+    res.json(templates);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── GET /api/templates/:id — get template data ─────────────────────────────
+
+router.get('/templates/:id', (req, res) => {
+  try {
+    const t = db.getTemplate(Number(req.params.id));
+    if (!t) return res.status(404).json({ error: 'Template not found' });
+    res.json({ ...t, data: JSON.parse(t.data) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── POST /api/templates — create a template ─────────────────────────────────
+
+router.post('/templates', (req, res) => {
+  try {
+    const { name, data } = req.body;
+    if (!name || !name.trim()) {
+      return res.status(400).json({ error: 'name is required' });
+    }
+    if (!data || !data.rounds) {
+      return res.status(400).json({ error: 'data.rounds is required' });
+    }
+    const result = db.createTemplate(name.trim(), JSON.stringify(data));
+    res.status(201).json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── DELETE /api/templates/:id — delete a template ───────────────────────────
+
+router.delete('/templates/:id', (req, res) => {
+  try {
+    db.deleteTemplate(Number(req.params.id));
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

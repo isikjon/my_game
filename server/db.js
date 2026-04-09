@@ -64,6 +64,13 @@ function getDb(dbPath) {
       score         INTEGER DEFAULT 0,
       FOREIGN KEY (game_id) REFERENCES games(id) ON DELETE CASCADE
     );
+
+    CREATE TABLE IF NOT EXISTS templates (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      name          TEXT NOT NULL,
+      data          TEXT NOT NULL,
+      created_at    TEXT DEFAULT (datetime('now'))
+    );
   `);
 
   return _db;
@@ -320,6 +327,29 @@ function deleteOldGames(hoursAgo = 24) {
   ).run(-hoursAgo);
 }
 
+// ─── Templates ────────────────────────────────────────────────────────────────
+
+function listTemplates() {
+  const db = getDb();
+  return db.prepare('SELECT id, name, created_at FROM templates ORDER BY created_at DESC').all();
+}
+
+function getTemplate(id) {
+  const db = getDb();
+  return db.prepare('SELECT * FROM templates WHERE id = ?').get(id);
+}
+
+function createTemplate(name, data) {
+  const db = getDb();
+  const res = db.prepare('INSERT INTO templates (name, data) VALUES (?, ?)').run(name, data);
+  return { id: Number(res.lastInsertRowid), name };
+}
+
+function deleteTemplate(id) {
+  const db = getDb();
+  db.prepare('DELETE FROM templates WHERE id = ?').run(id);
+}
+
 module.exports = {
   getDb,
   closeDb,
@@ -341,4 +371,8 @@ module.exports = {
   setCurrentRound,
   setCurrentQuestion,
   deleteOldGames,
+  listTemplates,
+  getTemplate,
+  createTemplate,
+  deleteTemplate,
 };

@@ -4,6 +4,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import '../widgets/add_team_dialog.dart';
 import '../widgets/create_game_dialog.dart';
 import '../services/game_api_service.dart';
+import '../services/session_service.dart';
 import 'game_setup_screen.dart';
 import 'team_count_screen.dart';
 
@@ -29,20 +30,18 @@ class _HostSetupScreenState extends State<HostSetupScreen> {
   bool _gamesSelectionMode = false;
   final Set<int> _selectedTeamIndices = {};
   final Set<int> _selectedGameIndices = {};
+  bool _isLoading = false;
+  int? _loadingGameIndex;
 
   Future<void> _loadData() async {
-    debugPrint('[DEBUG] HostSetupScreen: _loadData started');
+    if (_isLoading) return;
+    setState(() => _isLoading = true);
     final api = GameApiService();
     try {
       final games = await api.listGames();
-      debugPrint('[DEBUG] HostSetupScreen: games loaded (${games.length})');
       final teamNames = await api.listTeams();
-      debugPrint('[DEBUG] HostSetupScreen: teams loaded (${teamNames.length})');
       
-      if (!mounted) {
-        debugPrint('[DEBUG] HostSetupScreen: _loadData finished but widget not mounted');
-        return;
-      }
+      if (!mounted) return;
       setState(() {
         _games.clear();
         _games.addAll(games.map((g) => _HostGameItem(
@@ -52,12 +51,11 @@ class _HostSetupScreenState extends State<HostSetupScreen> {
         _teams.clear();
         _teams.addAll(teamNames.map((name) => _TeamItem(name: name)));
       });
-      debugPrint('[DEBUG] HostSetupScreen: _loadData state updated');
-    } catch (e, st) {
-      debugPrint('[DEBUG] HostSetupScreen: _loadData ERROR: $e');
-      debugPrint('[DEBUG] HostSetupScreen: _loadData STACK: $st');
+    } catch (e) {
+      debugPrint('[HostSetupScreen] _loadData error: $e');
     } finally {
       api.close();
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -176,12 +174,17 @@ class _HostSetupScreenState extends State<HostSetupScreen> {
     if (name == null || name.isEmpty) return;
 
     if (!mounted) return;
-    Navigator.push(
+    SessionService.save(GameSession(screen: 'game_setup', gameName: name));
+    await Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => GameSetupScreen(gameName: name),
       ),
     );
+
+    // Restore session to host_setup when we return here
+    SessionService.save(const GameSession(screen: 'host_setup'));
+    if (mounted) _loadData();
   }
 
   @override
@@ -214,15 +217,23 @@ class _HostSetupScreenState extends State<HostSetupScreen> {
                             onToggleSelectionMode: _toggleGamesSelectionMode,
                             onToggleSelection: _toggleGameSelection,
                             onDeleteSelected: _deleteSelectedGames,
+                            loadingGameIndex: _loadingGameIndex,
                             onStartGame: (i) async {
+                              if (_isLoading) return;
                               final g = _games[i];
                               final code = g.serverCode;
                               if (code == null) return;
+
+                              setState(() {
+                                _isLoading = true;
+                                _loadingGameIndex = i;
+                              });
 
                               final api = GameApiService();
                               try {
                                 final result = await api.fetchGame(code);
                                 if (!mounted) return;
+                                SessionService.save(GameSession(screen: 'team_count', gameCode: code));
                                 Navigator.push(
                                   context,
                                   MaterialPageRoute(
@@ -242,6 +253,12 @@ class _HostSetupScreenState extends State<HostSetupScreen> {
                                 );
                               } finally {
                                 api.close();
+                                if (mounted) {
+                                  setState(() {
+                                    _isLoading = false;
+                                    _loadingGameIndex = null;
+                                  });
+                                }
                               }
                             },
                           ),
@@ -257,7 +274,10 @@ class _HostSetupScreenState extends State<HostSetupScreen> {
                 child: Row(
                   children: [
                     GestureDetector(
-                      onTap: () => Navigator.pop(context),
+                      onTap: () {
+                        SessionService.clear();
+                        Navigator.pop(context);
+                      },
                       child: Container(
                         padding: const EdgeInsets.all(8),
                         decoration: BoxDecoration(
@@ -277,8 +297,17 @@ class _HostSetupScreenState extends State<HostSetupScreen> {
                           color: const Color(0xFF863C15),
                           borderRadius: BorderRadius.circular(12),
                         ),
-                        child: const Icon(Icons.refresh,
-                            color: Colors.white, size: 24),
+                        child: _isLoading && _loadingGameIndex == null
+                            ? const SizedBox(
+                                width: 24,
+                                height: 24,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2.5,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Icon(Icons.refresh,
+                                color: Colors.white, size: 24),
                       ),
                     ),
                   ],
@@ -580,6 +609,7 @@ class _GamesSection extends StatelessWidget {
   final void Function(int) onToggleSelection;
   final VoidCallback onDeleteSelected;
   final void Function(int) onStartGame;
+  final int? loadingGameIndex;
 
   const _GamesSection({
     required this.sectionHeight,
@@ -591,6 +621,7 @@ class _GamesSection extends StatelessWidget {
     required this.onToggleSelection,
     required this.onDeleteSelected,
     required this.onStartGame,
+    this.loadingGameIndex,
   });
 
   @override
@@ -753,6 +784,7 @@ class _GamesSection extends StatelessWidget {
                   isSelected: selectedIndices.contains(i),
                   onTap: selectionMode ? () => onToggleSelection(i) : null,
                   onStart: () => onStartGame(i),
+                  isLoading: loadingGameIndex == i,
                 ),
               );
             }),
@@ -771,6 +803,7 @@ class _GameCard extends StatelessWidget {
   final bool isSelected;
   final VoidCallback? onTap;
   final VoidCallback onStart;
+  final bool isLoading;
 
   const _GameCard({
     required this.name,
@@ -779,6 +812,7 @@ class _GameCard extends StatelessWidget {
     required this.isSelected,
     this.onTap,
     required this.onStart,
+    this.isLoading = false,
   });
 
   @override
@@ -871,30 +905,43 @@ class _GameCard extends StatelessWidget {
             ] else ...[
               const SizedBox(width: 16),
               GestureDetector(
-                onTap: onStart,
-                child: Container(
+                onTap: isLoading ? null : onStart,
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
                   padding:
                       const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
                   decoration: BoxDecoration(
-                    gradient: const LinearGradient(
+                    gradient: LinearGradient(
                       begin: Alignment.topCenter,
                       end: Alignment.bottomCenter,
-                      colors: [Color(0xFFA35A33), Color(0xFF863C15)],
+                      colors: isLoading
+                          ? [const Color(0xFFA35A33).withValues(alpha: 0.6), const Color(0xFF863C15).withValues(alpha: 0.6)]
+                          : [const Color(0xFFA35A33), const Color(0xFF863C15)],
                     ),
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(
-                        Icons.play_arrow,
-                        color: Color(0xFFFFFFFF),
-                        size: 22,
-                      ),
+                      if (isLoading)
+                        const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2.5,
+                            color: Colors.white,
+                          ),
+                        )
+                      else
+                        const Icon(
+                          Icons.play_arrow,
+                          color: Color(0xFFFFFFFF),
+                          size: 22,
+                        ),
                       const SizedBox(width: 12),
-                      const Text(
-                        'Начать',
-                        style: TextStyle(
+                      Text(
+                        isLoading ? 'Загрузка…' : 'Начать',
+                        style: const TextStyle(
                           color: Color(0xFFFFFFFF),
                           fontSize: 20,
                           fontWeight: FontWeight.w600,

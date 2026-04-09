@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/game_model.dart';
 import '../models/game_state.dart';
 import '../services/game_api_service.dart';
+import '../services/session_service.dart';
 import '../widgets/add_team_dialog.dart';
 import 'host_lobby_screen.dart';
 
@@ -46,6 +47,8 @@ class _TeamCountScreenState extends State<TeamCountScreen> {
           _teams.add(name);
         }
       });
+      // Refresh existing teams list to include the newly added team
+      _loadExistingTeams();
     }
   }
 
@@ -107,6 +110,7 @@ class _TeamCountScreenState extends State<TeamCountScreen> {
             ))
         .toList();
 
+    SessionService.save(GameSession(screen: 'host_lobby', gameCode: widget.gameCode));
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(
@@ -132,13 +136,11 @@ class _TeamCountScreenState extends State<TeamCountScreen> {
         child: SafeArea(
           child: Stack(
             children: [
-              Center(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 32),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
+              SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 60),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
                       const Padding(
                         padding: EdgeInsets.only(left: 4, bottom: 28),
                         child: Text(
@@ -276,15 +278,17 @@ class _TeamCountScreenState extends State<TeamCountScreen> {
                           ),
                         ),
                       ),
-                    ],
-                  ),
+                  ],
                 ),
               ),
               Positioned(
                 left: 16,
                 top: 16,
                 child: GestureDetector(
-                  onTap: () => Navigator.pop(context),
+                  onTap: () {
+                    SessionService.save(const GameSession(screen: 'host_setup'));
+                    Navigator.pop(context);
+                  },
                   child: Container(
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(

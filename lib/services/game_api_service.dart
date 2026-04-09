@@ -139,7 +139,7 @@ class GameApiService {
   }
 
   /// GET /api/games/:code — загружает игру с сервера и возвращает GameModel + список команд.
-  Future<({GameModel game, List<TeamState> teams, List<LiveRoundState> rounds, Set<int> usedQuestionIds})> fetchGame(String code) async {
+  Future<({GameModel game, List<TeamState> teams, List<LiveRoundState> rounds, Set<int> usedQuestionIds, String status, int currentRound})> fetchGame(String code) async {
     final uri = ServerConfig.uri('/api/games/$code');
     final resp =
         await _client.get(uri).timeout(const Duration(seconds: 10));
@@ -153,7 +153,7 @@ class GameApiService {
     return _parseServerGame(json);
   }
 
-  static ({GameModel game, List<TeamState> teams, List<LiveRoundState> rounds, Set<int> usedQuestionIds})
+  static ({GameModel game, List<TeamState> teams, List<LiveRoundState> rounds, Set<int> usedQuestionIds, String status, int currentRound})
       _parseServerGame(Map<String, dynamic> json) {
     final rawRounds = (json['rounds'] as List?) ?? [];
     final usedQids = <int>{};
@@ -201,6 +201,8 @@ class GameApiService {
       teams: teams,
       rounds: liveRounds,
       usedQuestionIds: usedQids,
+      status: json['status'] as String? ?? 'setup',
+      currentRound: (json['current_round'] as num?)?.toInt() ?? 0,
     );
   }
 

@@ -26,6 +26,8 @@ class GameNotifier extends StateNotifier<GameState> {
     _socket.on('round-changed', _onRoundChanged);
     _socket.on('game-ended', _onGameEnded);
     _socket.on('host-disconnected', _onHostDisconnected);
+    _socket.on('cat-question-revealed', _onCatQuestionRevealed);
+    _socket.on('team-penalized', _onTeamPenalized);
   }
 
   @override
@@ -40,6 +42,8 @@ class GameNotifier extends StateNotifier<GameState> {
     _socket.off('round-changed');
     _socket.off('game-ended');
     _socket.off('host-disconnected');
+    _socket.off('cat-question-revealed');
+    _socket.off('team-penalized');
     super.dispose();
   }
 
@@ -86,6 +90,7 @@ class GameNotifier extends StateNotifier<GameState> {
       revealedAnswer: null,
       awardedTeamId: null,
       awardedScore: null,
+      catRevealed: false,
     );
   }
 
@@ -180,6 +185,23 @@ class GameNotifier extends StateNotifier<GameState> {
       activeQuestion: null,
       revealedAnswer: null,
     );
+  }
+
+  void _onCatQuestionRevealed(dynamic data) {
+    final timerSeconds = data is Map
+        ? (data['timerSeconds'] as num?)?.toInt() ?? 60
+        : 60;
+    state = state.copyWith(
+      catRevealed: true,
+      timerSeconds: timerSeconds,
+    );
+  }
+
+  void _onTeamPenalized(dynamic data) {
+    if (data is! Map) return;
+    final rawTeams = (data['teams'] as List?) ?? [];
+    final teams = parseTeamsFromServerJson(rawTeams);
+    state = state.copyWith(teams: teams);
   }
 
   void _onHostDisconnected(dynamic _) {

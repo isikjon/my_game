@@ -3,6 +3,8 @@ import 'package:flutter_svg/flutter_svg.dart';
 import '../widgets/question_editor_dialog.dart';
 import '../models/game_model.dart';
 import '../services/game_api_service.dart';
+import '../services/session_service.dart';
+import '../services/template_service.dart';
 import 'team_count_screen.dart';
 
 class GameSetupScreen extends StatefulWidget {
@@ -164,6 +166,189 @@ class _GameSetupScreenState extends State<GameSetupScreen> {
     return '';
   }
 
+  // ─── Template helpers ──────────────────────────────────────────────────────
+
+  GameTemplate _buildTemplate(String name) {
+    return GameTemplate(
+      name: name,
+      createdAt: DateTime.now(),
+      rounds: List.generate(_rounds.length, (r) {
+        final topics = _roundTopics[r];
+        return RoundTemplate(
+          name: _rounds[r],
+          timeSeconds: _roundTimes[r],
+          topics: topics.map((t) {
+            return TopicTemplate(
+              name: t.name,
+              questions: t.questions.map((q) {
+                if (q == null) return null;
+                return QuestionTemplate(
+                  type: q.type.name,
+                  question: q.question,
+                  answer: q.answer,
+                );
+              }).toList(),
+            );
+          }).toList(),
+        );
+      }),
+    );
+  }
+
+  void _applyTemplate(GameTemplate template) {
+    setState(() {
+      _rounds.clear();
+      _roundTimes.clear();
+      _roundTopics.clear();
+
+      for (final r in template.rounds) {
+        _rounds.add(r.name);
+        _roundTimes.add(r.timeSeconds);
+        _roundTopics.add(r.topics.map((t) {
+          final row = _TopicRow(name: t.name);
+          for (int i = 0; i < t.questions.length && i < 5; i++) {
+            final q = t.questions[i];
+            if (q != null) {
+              row.questions[i] = QuestionData(
+                type: _parseTemplateType(q.type),
+                question: q.question,
+                answer: q.answer,
+              );
+            }
+          }
+          return row;
+        }).toList());
+      }
+
+      if (_rounds.isEmpty) {
+        _rounds.add('Раунд 1');
+        _roundTimes.add(60);
+        _roundTopics.add([_TopicRow(name: 'Тема 1')]);
+      }
+      _selectedRound = 0;
+    });
+  }
+
+  static QuestionType _parseTemplateType(String type) {
+    switch (type) {
+      case 'bonus':
+        return QuestionType.bonus;
+      case 'cat':
+        return QuestionType.cat;
+      default:
+        return QuestionType.normal;
+    }
+  }
+
+  Future<void> _saveTemplate() async {
+    final controller = TextEditingController();
+    final name = await showDialog<String>(
+      context: context,
+      builder: (ctx) => GestureDetector(
+        onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
+        child: AlertDialog(
+          backgroundColor: const Color(0xFFFFF1E4),
+          title: const Text(
+            'Сохранить шаблон',
+            style: TextStyle(
+              color: Color(0xFF3A1800),
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            style: const TextStyle(color: Color(0xFF3A1800), fontSize: 18),
+            decoration: const InputDecoration(
+              hintText: 'Название шаблона',
+              border: OutlineInputBorder(),
+              focusedBorder: OutlineInputBorder(
+                borderSide: BorderSide(color: Color(0xFF863C15), width: 2),
+              ),
+            ),
+            maxLength: 60,
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Отмена'),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFF863C15),
+              ),
+              onPressed: () {
+                final t = controller.text.trim();
+                if (t.isEmpty) return;
+                Navigator.pop(ctx, t);
+              },
+              child: const Text('Сохранить'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (name == null || name.isEmpty) return;
+
+    final template = _buildTemplate(name);
+    final ok = await TemplateService.save(template);
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(ok
+            ? 'Шаблон «$name» сохранён'
+            : 'Ошибка сохранения шаблона'),
+        backgroundColor: const Color(0xFF863C15),
+      ),
+    );
+  }
+
+  Future<void> _loadTemplate() async {
+    final templates = await TemplateService.loadAll();
+    if (!mounted) return;
+
+    if (templates.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Нет сохранённых шаблонов'),
+          backgroundColor: Color(0xFF863C15),
+        ),
+      );
+      return;
+    }
+
+    final selected = await showDialog<GameTemplate>(
+      context: context,
+      builder: (ctx) => _LoadTemplateDialog(templates: templates),
+    );
+
+    if (selected == null || selected.id == null || !mounted) return;
+
+    // Fetch full template data from server
+    final full = await TemplateService.loadById(selected.id!);
+    if (full == null) return;
+    if (!mounted) return;
+    if (full.rounds.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Ошибка загрузки шаблона'),
+          backgroundColor: Color(0xFF863C15),
+        ),
+      );
+      return;
+    }
+
+    _applyTemplate(full);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Шаблон «${full.name}» загружен'),
+        backgroundColor: const Color(0xFF863C15),
+      ),
+    );
+  }
+
   Future<void> _onSave() async {
     if (!_allQuestionsFilled) {
       showDialog(
@@ -271,7 +456,13 @@ class _GameSetupScreenState extends State<GameSetupScreen> {
             backgroundColor: Color(0xFF863C15),
           ),
         );
-        Navigator.pop(context); // Return to HostSetupScreen
+        SessionService.save(GameSession(screen: 'team_count', gameCode: code));
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => TeamCountScreen(game: game, gameCode: code),
+          ),
+        );
       }
     } catch (e) {
       if (mounted) Navigator.of(context).pop(); // Dismiss loading
@@ -352,7 +543,13 @@ class _GameSetupScreenState extends State<GameSetupScreen> {
                   ),
                 ),
               ),
-              const SizedBox(height: 24),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 12, 24, 16),
+                child: _TemplateButtons(
+                  onSaveTemplate: _saveTemplate,
+                  onLoadTemplate: _loadTemplate,
+                ),
+              ),
             ],
           ),
         ),
@@ -1039,6 +1236,280 @@ class _AddTopicRow extends StatelessWidget {
             borderRadius: BorderRadius.circular(14),
           ),
           child: const Icon(Icons.add, color: Colors.white, size: 26),
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Template Buttons ─────────────────────────────────────────────────────────
+
+class _TemplateButtons extends StatefulWidget {
+  final VoidCallback onSaveTemplate;
+  final VoidCallback onLoadTemplate;
+
+  const _TemplateButtons({
+    required this.onSaveTemplate,
+    required this.onLoadTemplate,
+  });
+
+  @override
+  State<_TemplateButtons> createState() => _TemplateButtonsState();
+}
+
+class _TemplateButtonsState extends State<_TemplateButtons> {
+  bool _hasTemplates = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkTemplates();
+  }
+
+  Future<void> _checkTemplates() async {
+    final templates = await TemplateService.loadAll();
+    if (mounted) setState(() => _hasTemplates = templates.isNotEmpty);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        GestureDetector(
+          onTap: () {
+            widget.onSaveTemplate();
+            Future.delayed(const Duration(milliseconds: 500), _checkTemplates);
+          },
+          child: Container(
+            height: 56,
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFF1E4),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.save_outlined,
+                    color: Color(0xFF863C15), size: 22),
+                const SizedBox(width: 6),
+                const Text(
+                  'Шаблон',
+                  style: TextStyle(
+                    color: Color(0xFF863C15),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(width: 6),
+        GestureDetector(
+          onTap: _hasTemplates ? widget.onLoadTemplate : null,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            height: 56,
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            decoration: BoxDecoration(
+              color: _hasTemplates
+                  ? const Color(0xFF863C15)
+                  : const Color(0xFFD4B89A),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.download_outlined,
+                    color: _hasTemplates
+                        ? Colors.white
+                        : const Color(0xFFB89070),
+                    size: 22),
+                const SizedBox(width: 6),
+                Text(
+                  'Загрузить',
+                  style: TextStyle(
+                    color: _hasTemplates
+                        ? Colors.white
+                        : const Color(0xFFB89070),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ─── Load Template Dialog ─────────────────────────────────────────────────────
+
+class _LoadTemplateDialog extends StatefulWidget {
+  final List<GameTemplate> templates;
+
+  const _LoadTemplateDialog({required this.templates});
+
+  @override
+  State<_LoadTemplateDialog> createState() => _LoadTemplateDialogState();
+}
+
+class _LoadTemplateDialogState extends State<_LoadTemplateDialog> {
+  late List<GameTemplate> _templates;
+
+  @override
+  void initState() {
+    super.initState();
+    _templates = List.of(widget.templates);
+  }
+
+  String _formatDate(DateTime dt) {
+    return '${dt.day.toString().padLeft(2, '0')}.'
+        '${dt.month.toString().padLeft(2, '0')}.'
+        '${dt.year} '
+        '${dt.hour.toString().padLeft(2, '0')}:'
+        '${dt.minute.toString().padLeft(2, '0')}';
+  }
+
+  String _templateInfo(GameTemplate t) {
+    if (t.rounds.isEmpty) return '';
+    int totalTopics = 0;
+    for (final r in t.rounds) {
+      totalTopics += r.topics.length;
+    }
+    return '${t.rounds.length} раунд. · $totalTopics тем · ';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: const Color(0xFFFFF1E4),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 480, maxHeight: 500),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'Загрузить шаблон',
+                      style: TextStyle(
+                        color: Color(0xFF3A1800),
+                        fontSize: 22,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  GestureDetector(
+                    onTap: () => Navigator.pop(context),
+                    child: const Icon(Icons.close,
+                        color: Color(0xFF9C532C), size: 28),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              if (_templates.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 32),
+                  child: Center(
+                    child: Text(
+                      'Нет сохранённых шаблонов',
+                      style: TextStyle(
+                        color: Color(0xFF9C532C),
+                        fontSize: 16,
+                      ),
+                    ),
+                  ),
+                )
+              else
+                Flexible(
+                  child: ListView.separated(
+                    shrinkWrap: true,
+                    itemCount: _templates.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 10),
+                    itemBuilder: (context, i) {
+                      final t = _templates[i];
+                      return GestureDetector(
+                        onTap: () => Navigator.pop(context, t),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 18, vertical: 14),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFFFBF7),
+                            borderRadius: BorderRadius.circular(16),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.06),
+                                blurRadius: 8,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.description_outlined,
+                                  color: Color(0xFF863C15), size: 28),
+                              const SizedBox(width: 14),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      t.name,
+                                      style: const TextStyle(
+                                        color: Color(0xFF3A1800),
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      '${_templateInfo(t)}${_formatDate(t.createdAt)}',
+                                      style: TextStyle(
+                                        color: const Color(0xFF3A1800)
+                                            .withValues(alpha: 0.6),
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              GestureDetector(
+                                onTap: () async {
+                                  final tid = t.id;
+                                  if (tid == null) return;
+                                  await TemplateService.delete(tid);
+                                  setState(() => _templates.removeAt(i));
+                                  if (_templates.isEmpty && context.mounted) {
+                                    Navigator.pop(context);
+                                  }
+                                },
+                                behavior: HitTestBehavior.opaque,
+                                child: const Padding(
+                                  padding: EdgeInsets.all(8),
+                                  child: Icon(Icons.delete_outline,
+                                      color: Color(0xFF9C532C), size: 22),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+            ],
+          ),
         ),
       ),
     );

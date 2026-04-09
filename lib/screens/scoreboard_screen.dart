@@ -1,5 +1,6 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
+import '../services/session_service.dart';
 import 'mode_selection_screen.dart';
 
 class ScoreboardScreen extends StatefulWidget {
@@ -26,6 +27,7 @@ class _ScoreboardScreenState extends State<ScoreboardScreen>
   @override
   void initState() {
     super.initState();
+    SessionService.clear();
 
     final rng = Random();
     if (widget.teams != null && widget.scores != null) {
@@ -116,13 +118,16 @@ class _ScoreboardScreenState extends State<ScoreboardScreen>
                         _buildTeamsRow(),
                         const SizedBox(height: 50),
                         GestureDetector(
-                          onTap: () => Navigator.pushAndRemoveUntil(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => const ModeSelectionScreen(),
-                            ),
-                            (_) => false,
-                          ),
+                          onTap: () {
+                            SessionService.clear();
+                            Navigator.pushAndRemoveUntil(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const ModeSelectionScreen(),
+                              ),
+                              (_) => false,
+                            );
+                          },
                           child: Container(
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 64, vertical: 22),

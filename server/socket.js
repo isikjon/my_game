@@ -1,7 +1,35 @@
 const db = require('./db');
 
-// gameCode → { hostId, interval, seconds, questionId }
+// gameCode → { hostId, interval, seconds, questionId, phase, roundIdx, topicIdx, scoreIdx, answerText, catRevealed }
 const liveGames = new Map();
+
+function buildLiveStateAck(code) {
+  const live = liveGames.get(code);
+  if (!live || !live.phase) return null;
+  const result = { phase: live.phase };
+  if (live.questionId) {
+    const q = db.getQuestionById(live.questionId);
+    if (q) {
+      result.activeQuestion = {
+        questionId: q.id,
+        questionText: q.question_text,
+        score: q.score,
+        type: q.type,
+        roundIdx: live.roundIdx,
+        topicIdx: live.topicIdx,
+        scoreIdx: live.scoreIdx,
+        timerSeconds: live.seconds || 0,
+      };
+    }
+  }
+  if (live.phase === 'result' && live.answerText) {
+    result.revealedAnswer = live.answerText;
+  }
+  if (live.catRevealed) {
+    result.catRevealed = true;
+  }
+  return result;
+}
 
 function registerSocket(io) {
   io.on('connection', (socket) => {
@@ -16,12 +44,13 @@ function registerSocket(io) {
 
       let live = liveGames.get(code);
       if (!live) {
-        live = { hostId: socket.id, interval: null, seconds: 0, questionId: null };
+        live = { hostId: socket.id, interval: null, seconds: 0, questionId: null, phase: null };
         liveGames.set(code, live);
       }
       live.hostId = socket.id;
 
-      ack?.({ ok: true, game });
+      const liveState = buildLiveStateAck(code);
+      ack?.({ ok: true, game, liveState });
     });
 
     // ─── Player joins game room ──────────────────────────────────────────
@@ -34,7 +63,8 @@ function registerSocket(io) {
       socket.data.role = 'player';
 
       socket.to(code).emit('player-joined', { socketId: socket.id });
-      ack?.({ ok: true, game });
+      const liveState = buildLiveStateAck(code);
+      ack?.({ ok: true, game, liveState });
     });
 
     // ─── Start game ─────────────────────────────────────────────────────
@@ -44,6 +74,16 @@ function registerSocket(io) {
 
       db.setGameStatus(game.id, 'playing');
       db.setCurrentRound(game.id, 0);
+
+      const live = liveGames.get(code);
+      if (live) {
+        live.phase = 'board';
+        live.questionId = null;
+        live.roundIdx = undefined;
+        live.topicIdx = undefined;
+        live.scoreIdx = undefined;
+        live.answerText = undefined;
+      }
 
       const updated = db.getGameByCode(code);
       io.to(code).emit('game-started', updated);
@@ -82,6 +122,13 @@ function registerSocket(io) {
       live.seconds = totalSeconds;
       live.questionId = question.id;
 
+      live.phase = 'question';
+      live.roundIdx = roundIdx;
+      live.topicIdx = topicIdx;
+      live.scoreIdx = scoreIdx;
+      live.answerText = undefined;
+      live.catRevealed = false;
+
       io.to(code).emit('question-selected', {
         questionId: question.id,
         questionText: question.question_text,
@@ -93,16 +140,20 @@ function registerSocket(io) {
         scoreIdx,
       });
 
-      // start countdown
-      live.interval = setInterval(() => {
-        live.seconds--;
-        io.to(code).emit('timer-tick', { seconds: live.seconds });
-        if (live.seconds <= 0) {
-          clearInterval(live.interval);
-          live.interval = null;
-          io.to(code).emit('timer-ended');
-        }
-      }, 1000);
+      // For cat questions, delay timer until host calls reveal-cat-question
+      if (question.type === 'cat') {
+        live.seconds = totalSeconds;
+      } else {
+        live.interval = setInterval(() => {
+          live.seconds--;
+          io.to(code).emit('timer-tick', { seconds: live.seconds });
+          if (live.seconds <= 0) {
+            clearInterval(live.interval);
+            live.interval = null;
+            io.to(code).emit('timer-ended');
+          }
+        }, 1000);
+      }
 
       ack?.({ ok: true, questionId: question.id });
     });
@@ -115,11 +166,68 @@ function registerSocket(io) {
       const question = db.getQuestionById(game.current_qid);
       if (!question) return ack?.({ error: 'Question not found' });
 
+      const live = liveGames.get(code);
+      if (live) {
+        live.phase = 'result';
+        live.answerText = question.answer_text;
+      }
+
       io.to(code).emit('answer-revealed', {
         answerText: question.answer_text,
         questionId: question.id,
       });
       ack?.({ ok: true });
+    });
+
+    // ─── Reveal cat question (start timer after cat splash) ────────────
+    socket.on('reveal-cat-question', (code, ack) => {
+      const game = db.getGameByCode(code);
+      if (!game) return ack?.({ error: 'Game not found' });
+
+      const live = liveGames.get(code);
+      if (!live || !live.questionId) return ack?.({ error: 'No active question' });
+
+      if (live.interval) clearInterval(live.interval);
+
+      const totalSeconds = live.seconds || 60;
+      live.catRevealed = true;
+      io.to(code).emit('cat-question-revealed', { timerSeconds: totalSeconds });
+
+      live.interval = setInterval(() => {
+        live.seconds--;
+        io.to(code).emit('timer-tick', { seconds: live.seconds });
+        if (live.seconds <= 0) {
+          clearInterval(live.interval);
+          live.interval = null;
+          io.to(code).emit('timer-ended');
+        }
+      }, 1000);
+
+      ack?.({ ok: true });
+    });
+
+    // ─── Penalize team (deduct points, keep question open) ───────────
+    socket.on('penalize-team', ({ code, teamId }, ack) => {
+      const game = db.getGameByCode(code);
+      if (!game) return ack?.({ error: 'Game not found' });
+
+      const live = liveGames.get(code);
+      const qid = game.current_qid || live?.questionId;
+      if (!qid) return ack?.({ error: 'No active question' });
+
+      const question = db.getQuestionById(qid);
+      if (!question) return ack?.({ error: 'Question not found' });
+
+      db.updateTeamScore(teamId, -question.score);
+
+      const teams = db.getTeams(game.id);
+      io.to(code).emit('team-penalized', {
+        teamId,
+        penaltyScore: question.score,
+        teams,
+      });
+
+      ack?.({ ok: true, teams });
     });
 
     // ─── Assign score to team ───────────────────────────────────────────
@@ -141,20 +249,31 @@ function registerSocket(io) {
       const question = db.getQuestionById(qid);
       if (!question) return ack?.({ error: 'Question not found' });
 
-      // award points
+      const awardedScore = (teamId && question.type === 'bonus')
+        ? question.score * 2
+        : question.score;
+
       if (teamId) {
-        db.updateTeamScore(teamId, question.score);
+        db.updateTeamScore(teamId, awardedScore);
       }
 
       db.markQuestionUsed(question.id);
       db.setCurrentQuestion(game.id, null);
       if (live) live.questionId = null;
 
+      if (live) {
+        live.phase = 'board';
+        live.roundIdx = undefined;
+        live.topicIdx = undefined;
+        live.scoreIdx = undefined;
+        live.answerText = undefined;
+      }
+
       const teams = db.getTeams(game.id);
       io.to(code).emit('score-updated', {
         teams,
         awardedTeamId: teamId || null,
-        awardedScore: question.score,
+        awardedScore,
         questionId: question.id,
       });
 
@@ -179,6 +298,14 @@ function registerSocket(io) {
         if (live) live.questionId = null;
       }
 
+      if (live) {
+        live.phase = 'board';
+        live.roundIdx = undefined;
+        live.topicIdx = undefined;
+        live.scoreIdx = undefined;
+        live.answerText = undefined;
+      }
+
       io.to(code).emit('question-skipped', { questionId: qid });
       ack?.({ ok: true });
     });
@@ -193,6 +320,17 @@ function registerSocket(io) {
       }
 
       db.setCurrentRound(game.id, roundIdx);
+
+      const live = liveGames.get(code);
+      if (live) {
+        live.phase = 'board';
+        live.questionId = null;
+        live.roundIdx = undefined;
+        live.topicIdx = undefined;
+        live.scoreIdx = undefined;
+        live.answerText = undefined;
+      }
+
       const updated = db.getGameByCode(code);
       io.to(code).emit('round-changed', { roundIdx, game: updated });
       ack?.({ ok: true });

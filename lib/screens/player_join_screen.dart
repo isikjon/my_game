@@ -3,7 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/game_state.dart';
 import '../services/game_api_service.dart';
+import '../services/session_service.dart';
 import '../state/providers.dart';
+import '../widgets/pressable.dart';
 import 'live_game_screen.dart';
 
 
@@ -124,6 +126,12 @@ class _PlayerJoinScreenState extends ConsumerState<PlayerJoinScreen> {
             rounds: rounds,
           ).copyWith(usedQuestionIds: usedQuestionIds);
 
+          SessionService.save(GameSession(
+            gameCode: code,
+            role: 'player',
+            screen: 'live',
+          ));
+
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(
@@ -169,7 +177,10 @@ class _PlayerJoinScreenState extends ConsumerState<PlayerJoinScreen> {
                 child: Row(
                   children: [
                     GestureDetector(
-                      onTap: () => Navigator.pop(context),
+                      onTap: () {
+                        SessionService.clear();
+                        Navigator.pop(context);
+                      },
                       behavior: HitTestBehavior.opaque,
                       child: const Padding(
                         padding: EdgeInsets.all(8),
@@ -438,7 +449,7 @@ class _JoinButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    return Pressable(
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),

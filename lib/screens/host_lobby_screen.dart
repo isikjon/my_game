@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/game_state.dart';
+import '../services/session_service.dart';
 import '../state/providers.dart';
+import '../state/socket_service.dart';
 import 'live_game_screen.dart';
 
 /// Host arrives here after TeamCountScreen saves teams.
@@ -28,6 +30,7 @@ class _HostLobbyScreenState extends ConsumerState<HostLobbyScreen> {
   bool _starting = false;
   String? _error;
   List<TeamState> _teams = [];
+  List<LiveRoundState> _serverRounds = [];
   Set<int> _usedQuestionIds = {};
 
   @override
@@ -69,6 +72,8 @@ class _HostLobbyScreenState extends ConsumerState<HostLobbyScreen> {
             }
           }
 
+          final parsedRounds = parseRoundsFromServerJson(rawRounds);
+
           final displayTeams = teams.isNotEmpty
               ? teams
               : widget.teamNames
@@ -80,6 +85,7 @@ class _HostLobbyScreenState extends ConsumerState<HostLobbyScreen> {
           setState(() {
             _connecting = false;
             _teams = displayTeams;
+            _serverRounds = parsedRounds;
             _usedQuestionIds = usedQids;
           });
         });
@@ -100,20 +106,25 @@ class _HostLobbyScreenState extends ConsumerState<HostLobbyScreen> {
 
     final socket = ref.read(socketServiceProvider);
 
-    // Build initial GameState for host
+    final effectiveRounds =
+        _serverRounds.isNotEmpty ? _serverRounds : widget.rounds;
+
     final initialState = GameState.lobby(
       gameCode: widget.gameCode,
       role: PlayerRole.host,
       teams: _teams,
-      rounds: widget.rounds,
+      rounds: effectiveRounds,
     ).copyWith(usedQuestionIds: _usedQuestionIds);
 
-    debugPrint('[DEBUG] HostLobbyScreen: Starting game with ${initialState.teams.length} teams');
+    debugPrint(
+        '[DEBUG] HostLobbyScreen: Starting game with ${initialState.teams.length} teams, ${effectiveRounds.length} rounds');
 
-    // Emit start-game BEFORE navigation to ensure server is ready
-    socket.startGame(widget.gameCode);
+    SessionService.save(GameSession(
+      gameCode: widget.gameCode,
+      role: 'host',
+      screen: 'live',
+    ));
 
-    // Navigate to LiveGameScreen with overridden providers
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(
@@ -121,7 +132,10 @@ class _HostLobbyScreenState extends ConsumerState<HostLobbyScreen> {
           overrides: [
             createGameOverride(socket: socket, initialState: initialState),
           ],
-          child: LiveGameScreen(gameCode: widget.gameCode),
+          child: _StartGameWrapper(
+            gameCode: widget.gameCode,
+            socket: socket,
+          ),
         ),
       ),
     );
@@ -254,6 +268,57 @@ class _HostLobbyScreenState extends ConsumerState<HostLobbyScreen> {
           ],
         ),
       );
+}
+
+/// Wrapper that emits start-game AFTER GameNotifier is subscribed to events.
+class _StartGameWrapper extends ConsumerStatefulWidget {
+  final String gameCode;
+  final SocketService socket;
+
+  const _StartGameWrapper({required this.gameCode, required this.socket});
+
+  @override
+  ConsumerState<_StartGameWrapper> createState() => _StartGameWrapperState();
+}
+
+class _StartGameWrapperState extends ConsumerState<_StartGameWrapper> {
+  bool _emitted = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_emitted) {
+        _emitted = true;
+        _emitStart();
+      }
+    });
+  }
+
+  void _emitStart() {
+    debugPrint('[DEBUG] _StartGameWrapper: attempting start-game for ${widget.gameCode}');
+    widget.socket.whenConnected(
+      () {
+        widget.socket.startGame(widget.gameCode, ack: (ack) {
+          debugPrint('[DEBUG] _StartGameWrapper: start-game ack: $ack');
+        });
+      },
+      onError: (err) {
+        debugPrint('[DEBUG] _StartGameWrapper: socket error, retrying in 2s: $err');
+        if (mounted) {
+          Future.delayed(const Duration(seconds: 2), () {
+            if (mounted) _emitStart();
+          });
+        }
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    ref.watch(gameProvider);
+    return LiveGameScreen(gameCode: widget.gameCode);
+  }
 }
 
 // ─── Reusable widgets ─────────────────────────────────────────────────────────

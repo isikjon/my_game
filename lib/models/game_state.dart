@@ -85,6 +85,7 @@ class GameState {
   final Set<int> usedQuestionIds;
   final int? awardedTeamId;
   final int? awardedScore;
+  final bool catRevealed;
 
   const GameState({
     required this.phase,
@@ -99,6 +100,7 @@ class GameState {
     required this.usedQuestionIds,
     this.awardedTeamId,
     this.awardedScore,
+    this.catRevealed = false,
   });
 
   /// Initial lobby state before the game starts.
@@ -132,6 +134,7 @@ class GameState {
     Set<int>? usedQuestionIds,
     Object? awardedTeamId = _sentinel,
     Object? awardedScore = _sentinel,
+    bool? catRevealed,
   }) =>
       GameState(
         phase: phase ?? this.phase,
@@ -154,6 +157,7 @@ class GameState {
         awardedScore: awardedScore == _sentinel
             ? this.awardedScore
             : awardedScore as int?,
+        catRevealed: catRevealed ?? this.catRevealed,
       );
 
   bool get isHost => role == PlayerRole.host;

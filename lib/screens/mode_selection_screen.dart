@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../services/session_service.dart';
+import '../widgets/pressable.dart';
 import 'host_setup_screen.dart';
 import 'player_join_screen.dart';
 
@@ -186,6 +188,7 @@ class ModeSelectionScreen extends StatelessWidget {
     );
 
     if (accepted == true && context.mounted) {
+      SessionService.save(const GameSession(screen: 'host_setup'));
       navigator.push(
         MaterialPageRoute(
           builder: (_) => const HostSetupScreen(),
@@ -243,14 +246,17 @@ class ModeSelectionScreen extends StatelessWidget {
                           ),
                           const SizedBox(width: 20),
                           Expanded(
-                            child: _ModeButton(
-                              label: 'Режим игры — Игроки',
-                              onTap: () => Navigator.push(
+                          child: _ModeButton(
+                            label: 'Режим игры — Игроки',
+                            onTap: () {
+                              SessionService.save(const GameSession(screen: 'player_join'));
+                              Navigator.push(
                                 context,
                                 MaterialPageRoute(
                                   builder: (_) => const PlayerJoinScreen(),
                                 ),
-                              ),
+                              );
+                            },
                             ),
                           ),
                         ],
@@ -275,7 +281,7 @@ class _ModeButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    return Pressable(
       onTap: onTap,
       child: Container(
         width: double.infinity,
